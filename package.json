@@ -1,0 +1,94 @@
+{
+  "name": "@client-api-kit",
+  "version": "0.0.1",
+  "description": "Generic, type-safe API client built on axios and api-response-kit's response envelope. Framework-agnostic 'resources' for server components/server actions, plus a TanStack Query hooks layer for client components. Generic CRUD, offset + cursor pagination, unified error handling.",
+  "keywords": [
+    "api-client",
+    "axios",
+    "tanstack-query",
+    "react-query",
+    "server-actions",
+    "server-components",
+    "crud",
+    "pagination",
+    "typescript",
+    "nextjs"
+  ],
+  "author": "Anwar <anwarkamal1434@gmail.com>",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/org-utils/client-api-kit.git"
+  },
+  "homepage": "https://github.com/org-utils/client-api-kit#readme",
+  "bugs": {
+    "url": "https://github.com/org-utils/client-api-kit/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "sideEffects": false,
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "import": "./dist/react.js",
+      "require": "./dist/react.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "tsup && node scripts/add-use-client-directive.mjs",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run typecheck && npm run test && npm run build"
+  },
+  "dependencies": {
+    "@dev_config/api-response": "^1.0.1"
+  },
+  "peerDependencies": {
+    "@tanstack/react-query": "^5.0.0",
+    "axios": "^1.7.0",
+    "react": "^18 || ^19"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "@tanstack/react-query": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@dev_config/api-response": "^1.0.1",
+    "@tanstack/react-query": "5.101.2",
+    "@testing-library/react": "16.3.2",
+    "@types/node": "22.15.0",
+    "@types/react": "19.2.17",
+    "axios": "1.18.1",
+    "jsdom": "29.1.1",
+    "msw": "2.15.0",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "tsup": "8.5.1",
+    "typescript": "5.9.3",
+    "vitest": "4.1.10"
+  }
+}
