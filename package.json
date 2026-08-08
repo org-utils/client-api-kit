@@ -1,6 +1,6 @@
 {
   "name": "client-api-kit",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "Generic, type-safe API client built on axios and api-response-kit's response envelope. Framework-agnostic 'resources' for server components/server actions, plus a TanStack Query hooks layer for client components. Generic CRUD, offset + cursor pagination, unified error handling.",
   "keywords": [
     "api-client",
