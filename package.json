@@ -54,16 +54,16 @@
   },
   "scripts": {
     "build": "tsup && node scripts/add-use-client-directive.mjs",
-    "prebuild": "npm run typecheck && npm run test && npm run build",
+    "pre-build": "npm run typecheck && npm run test && npm run build",
     "dev": "tsup --watch",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "npx tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "changesets:init": "changeset init",
     "changeset": "changeset",
     "version": "changeset version",
     "publish": "changeset publish",
-    "release": "npm run prebuild && changeset publish"
+    "release": "npm run pre-build && changeset publish"
   },
   "dependencies": {
     "api-response-tsjs": "^0.0.2",
