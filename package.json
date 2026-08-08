@@ -66,7 +66,8 @@
     "release": "npm run prebuild && changeset publish"
   },
   "dependencies": {
-    "api-response-tsjs": "^0.0.1"
+    "api-response-tsjs": "^0.0.2",
+    "zod": "^4.4.3"
   },
   "peerDependencies": {
     "@tanstack/react-query": "^5.0.0",
