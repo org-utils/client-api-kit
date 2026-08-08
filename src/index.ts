@@ -14,7 +14,7 @@ export type { QueryKeyFactory } from "./resource/query-keys.js";
 export type { CreateResourceOptions, ListResult, ResourceClient } from "./types/resource.js";
 
 // Re-exported for convenience so consumers don't need a separate import from
-// @dev_config/api-response just to type pagination params/results.
+// api just to type pagination params/results.
 export type {
   ApiResponse,
   SuccessResponse,
@@ -25,5 +25,5 @@ export type {
   OffsetPaginationParams,
   CursorPaginationMeta,
   CursorPaginationParams,
-} from "@dev_config/api-response";
-export { isOffsetPagination, isCursorPagination } from "@dev_config/api-response";
+} from "api-response-tsjs";
+export { isOffsetPagination, isCursorPagination } from "api-response-tsjs";

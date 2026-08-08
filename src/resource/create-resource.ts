@@ -3,7 +3,7 @@ import { RawAxiosRequestHeaders, type AxiosRequestConfig } from "axios";
 import type { ApiClient } from "../core/create-client.js";
 import type { RequestOptions } from "../types/client.js";
 import type { ListResult, ResourceClient } from "../types/resource.js";
-import { SuccessResponse } from "@dev_config/api-response";
+import { SuccessResponse } from "api-response-tsjs";
 import { isDefined, safeNormalizeUrl } from "./utils.js";
 type ApiResponse<T> = SuccessResponse<T>;
 

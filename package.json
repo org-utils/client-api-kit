@@ -1,6 +1,6 @@
 {
   "name": "client-api-kit",
-  "version": "0.0.1",
+  "version": "0.0.0",
   "description": "Generic, type-safe API client built on axios and api-response-kit's response envelope. Framework-agnostic 'resources' for server components/server actions, plus a TanStack Query hooks layer for client components. Generic CRUD, offset + cursor pagination, unified error handling.",
   "keywords": [
     "api-client",
@@ -54,14 +54,19 @@
   },
   "scripts": {
     "build": "tsup && node scripts/add-use-client-directive.mjs",
+    "prebuild": "npm run typecheck && npm run test && npm run build",
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "prepublishOnly": "npm run typecheck && npm run test && npm run build"
+    "changesets:init": "changeset init",
+    "changeset": "changeset",
+    "version": "changeset version",
+    "publish": "changeset publish",
+    "release": "npm run prebuild && changeset publish"
   },
   "dependencies": {
-    "@dev_config/api-response": "^1.0.1"
+    "api-response-tsjs": "^0.0.1"
   },
   "peerDependencies": {
     "@tanstack/react-query": "^5.0.0",
@@ -77,7 +82,8 @@
     }
   },
   "devDependencies": {
-    "@dev_config/api-response": "^1.0.1",
+    "@changesets/changelog-github": "^0.7.0",
+    "@changesets/cli": "^2.31.1",
     "@tanstack/react-query": "5.101.2",
     "@testing-library/react": "16.3.2",
     "@types/node": "22.15.0",
