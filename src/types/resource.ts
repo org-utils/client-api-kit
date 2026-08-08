@@ -17,7 +17,7 @@ export interface CreateResourceOptions {
 /**
  * The generic contract a `createResource(...)` call fulfills. `ListParams`
  * is typically `OffsetPaginationParams` or `CursorPaginationParams` from
- * `@dev_config/api-response`, optionally intersected with your own filter/sort
+ * `api-response-tsjs`, optionally intersected with your own filter/sort
  * fields (e.g. `{ status?: "active" | "archived" }`).
  */
 export interface ResourceClient<
