@@ -1,5 +1,5 @@
 import axios, { type AxiosInstance, type AxiosRequestConfig, isAxiosError, RawAxiosRequestHeaders } from "axios";
-import type { ApiResponse, SuccessResponse } from "@dev_config/api-response";
+import type { ApiResponse, SuccessResponse } from "api-response-tsjs";
 import type { ApiClientConfig } from "../types/client.js";
 import { ApiClientError } from "../errors/ApiClientError.js";
 import { withRetry } from "./retry.js";

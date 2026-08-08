@@ -1,5 +1,5 @@
 import axios, { type AxiosError } from "axios";
-import type { ErrorDetail, ErrorResponse } from "@dev_config/api-response";
+import type { ErrorDetail, ErrorResponse } from "api-response-tsjs";
 
 export type ApiClientErrorKind = "network" | "timeout" | "cancelled" | "http" | "unknown";
 
@@ -7,7 +7,7 @@ export interface ApiClientErrorOptions {
   kind: ApiClientErrorKind;
   message: string;
   statusCode?: number;
-  /** Machine-readable code from the server's ErrorResponse (see @dev_config/api-response's ErrorCode), or a local one like "NETWORK_ERROR". */
+  /** Machine-readable code from the server's ErrorResponse (see api-response-tsjs's ErrorCode), or a local one like "NETWORK_ERROR". */
   code?: string;
   details?: ErrorDetail[];
   cause?: unknown;

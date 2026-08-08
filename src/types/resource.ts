@@ -1,4 +1,4 @@
-import type { PaginationMeta } from "@dev_config/api-response";
+import type { PaginationMeta } from "api-response-tsjs";
 import type { RequestOptions } from "./client.js";
 import { AxiosRequestConfig } from "axios";
 import { ApiClient } from "../core/create-client.js";
