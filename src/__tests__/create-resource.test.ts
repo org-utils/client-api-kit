@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { createApiClient } from "../core/create-client.js";
 import { createResource } from "../resource/create-resource.js";
 import { ApiClientError } from "../errors/ApiClientError.js";
-import { isOffsetPagination, isCursorPagination } from "api-response-tsjs";
+import { isOffsetPagination, isCursorPagination } from "../utils/index.js";
 import { BASE_URL, resetPosts, type Post } from "./mock-server.js";
 
 interface CreatePostInput {

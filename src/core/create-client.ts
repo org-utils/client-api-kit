@@ -1,6 +1,5 @@
 import axios, { type AxiosInstance, type AxiosRequestConfig, isAxiosError, RawAxiosRequestHeaders } from "axios";
-import type { ApiResponse, SuccessResponse } from "api-response-tsjs";
-import type { ApiClientConfig } from "../types/client.js";
+import type { ApiClientConfig,ApiResponse, SuccessResponse  } from "client-api-types";
 import { ApiClientError } from "../errors/ApiClientError.js";
 import { withRetry } from "./retry.js";
 type MaybePromise<T> = T | Promise<T>;

@@ -66,7 +66,6 @@
     "release": "npm run pre-build && changeset publish"
   },
   "dependencies": {
-    "api-response-tsjs": "^0.0.2",
     "zod": "^4.4.3"
   },
   "peerDependencies": {
@@ -90,6 +89,7 @@
     "@types/node": "22.15.0",
     "@types/react": "19.2.17",
     "axios": "1.18.1",
+    "client-api-types": "^0.0.1",
     "jsdom": "29.1.1",
     "msw": "2.15.0",
     "react": "19.2.7",

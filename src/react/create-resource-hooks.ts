@@ -10,10 +10,10 @@ import {
   type UseMutationOptions,
   type UseQueryOptions,
 } from "@tanstack/react-query";
-import { isCursorPagination } from "api-response-tsjs";
-import type { ResourceClient, ListResult } from "../types/resource.js";
+import type { ResourceClient, ListResult } from "client-api-types/client";
 import type { ApiClientError } from "../errors/ApiClientError.js";
 import { createQueryKeys, type QueryKeyFactory } from "../resource/query-keys.js";
+import { isCursorPagination } from "../utils/index.js";
 
 export interface ResourceHooks<
   T,
