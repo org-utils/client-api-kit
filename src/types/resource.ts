@@ -1,7 +1,7 @@
-import type { PaginationMeta } from "api-response-tsjs";
-import type { RequestOptions } from "./client.js";
+
 import { AxiosRequestConfig } from "axios";
 import { ApiClient } from "../core/create-client.js";
+import type { PaginationMeta, RequestOptions } from "client-api-types";
 
 export interface ListResult<T> {
   items: T[];

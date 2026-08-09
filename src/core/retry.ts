@@ -1,5 +1,5 @@
 import type { AxiosError } from "axios";
-import type { RetryConfig } from "../types/client.js";
+import type { RetryConfig } from "client-api-types";
 
 const DEFAULTS: Required<RetryConfig> = {
   retries: 2,
