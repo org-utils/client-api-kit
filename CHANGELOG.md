@@ -1,5 +1,11 @@
 # client-api-kit
 
+## 0.0.2
+
+### Patch Changes
+
+- [#7](https://github.com/org-utils/client-api-kit/pull/7) [`0af8b50`](https://github.com/org-utils/client-api-kit/commit/0af8b50255ff83c32218222356d2be886561eadd) Thanks [@Anwarkamal143](https://github.com/Anwarkamal143)! - removed api-response-tsjs and added client-api-types
+
 ## 0.0.1
 
 ### Patch Changes
