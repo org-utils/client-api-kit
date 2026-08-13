@@ -1,5 +1,11 @@
 # client-api-kit
 
+## 0.0.3
+
+### Patch Changes
+
+- [`9babeee`](https://github.com/org-utils/client-api-kit/commit/9babeee9efe3f12255e988d0c63dda427b46c5aa) Thanks [@Anwarkamal143](https://github.com/Anwarkamal143)! - updated patch
+
 ## 0.0.2
 
 ### Patch Changes
