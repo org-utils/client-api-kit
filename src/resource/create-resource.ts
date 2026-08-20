@@ -35,10 +35,10 @@ type MaybePromise<T> = T | Promise<T>;
  * TanStack Query hooks layer over the same resource.
  *
  * @typeParam T - The record type this resource manages.
- * @typeParam CreateInput - Payload type for `create`. Defaults to `Partial<T>`.
- * @typeParam UpdateInput - Payload type for `update`. Defaults to `Partial<T>`.
  * @typeParam ListParams - Query params for `list`, typically offset or cursor
  *   pagination params (optionally with filters). Defaults to `Record<string, unknown>`.
+ * @typeParam CreateInput - Payload type for `create`. Defaults to `Partial<T>`.
+ * @typeParam UpdateInput - Payload type for `update`. Defaults to `Partial<T>`.
  * @param client - The shared {@link ApiClient} to issue requests through.
  * @param options - `{ baseURL: "/users", ... }` - the resource path plus any
  *   axios request config to apply to every request (e.g. `params`, `headers`).
@@ -46,7 +46,7 @@ type MaybePromise<T> = T | Promise<T>;
  *   `remove`, `custom`, and runtime configuration setters.
  *
  * @example
- * const users = createResource<User, CreateUserInput, UpdateUserInput>(
+ * const users = createResource<User, OffsetPaginationParams, CreateUserInput, UpdateUserInput>(
  *   apiClient,
  *   { baseURL: "/users" },
  * );
@@ -54,9 +54,9 @@ type MaybePromise<T> = T | Promise<T>;
  */
 export function createResource<
   T,
+  ListParams extends object = Record<string, unknown>,
   CreateInput = Partial<T>,
   UpdateInput = Partial<T>,
-  ListParams extends object = Record<string, unknown>,
 >(
   client: ApiClient,
   options: CreateResourceOptions,

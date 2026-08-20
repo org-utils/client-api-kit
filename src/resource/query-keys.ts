@@ -22,6 +22,12 @@ export interface QueryKeyFactory<ListParams> {
   details: () => readonly [string, "detail"];
   /** `[resourceName, "detail", id]` - a single record's detail query. */
   detail: (id: string | number) => readonly [string, "detail", string | number];
+  /** `[resourceName, "custom", method, path, params]` - a single custom request, keyed by its request shape. */
+  custom: (
+    method?: "GET" | "POST" | "PUT" | "DELETE",
+    path?: string,
+    params?: Record<string, any>,
+  ) => readonly [string, "custom", "GET" | "POST" | "PUT" | "DELETE" | undefined, string | undefined, Record<string, any> | undefined];
 }
 
 /**
@@ -50,5 +56,6 @@ export function createQueryKeys<ListParams>(resourceName: string): QueryKeyFacto
     infinite: (params) => [...all, "infinite", params] as const,
     details: () => [...all, "detail"] as const,
     detail: (id) => [...all, "detail", id] as const,
+    custom: (method, path, params) => [...all, "custom", method, path, params] as const,
   };
 }

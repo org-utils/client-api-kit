@@ -3,6 +3,7 @@ import { createApiClient } from "../core/create-client.js";
 import { createResource } from "../resource/create-resource.js";
 import { ApiClientError } from "../errors/ApiClientError.js";
 import { isOffsetPagination, isCursorPagination } from "../utils/index.js";
+import type { OffsetPaginationParams } from "client-api-types";
 import { BASE_URL, resetPosts, type Post } from "./mock-server.js";
 
 interface CreatePostInput {
@@ -13,7 +14,9 @@ type UpdatePostInput = Partial<CreatePostInput>;
 
 function buildResource() {
   const client = createApiClient({ baseURL: BASE_URL });
-  return createResource<Post, CreatePostInput, UpdatePostInput>(client, { baseURL: "/posts" });
+  return createResource<Post, OffsetPaginationParams, CreatePostInput, UpdatePostInput>(client, {
+    baseURL: "/posts",
+  });
 }
 
 describe("createResource - offset-paginated list", () => {
@@ -48,7 +51,7 @@ describe("createResource - cursor-paginated feed", () => {
 
   it("returns items and cursor pagination metadata via a cursor-shaped basePath", async () => {
     const client = createApiClient({ baseURL: BASE_URL });
-    const feed = createResource<Post, CreatePostInput, UpdatePostInput, { cursor?: string; limit: number }>(client, {
+    const feed = createResource<Post, { cursor?: string; limit: number }, CreatePostInput, UpdatePostInput>(client, {
       baseURL: "/feed",
     });
 
@@ -119,7 +122,7 @@ describe("createResource - CRUD", () => {
 describe("createResource - custom requests", () => {
   it("custom sends per-request options headers", async () => {
     const client = createApiClient({ baseURL: BASE_URL });
-    const resource = createResource<Post, CreatePostInput, UpdatePostInput>(client, { baseURL: "" });
+    const resource = createResource<Post>(client, { baseURL: "" });
 
     const headers = await resource.custom<Record<string, string>>("GET", "/echo-headers", {
       options: { headers: { "X-Custom-Option": "option-value" } },
@@ -130,7 +133,7 @@ describe("createResource - custom requests", () => {
 
   it("setHeaders applies resource-level headers to every request", async () => {
     const client = createApiClient({ baseURL: BASE_URL });
-    const resource = createResource<Post, CreatePostInput, UpdatePostInput>(client, { baseURL: "" });
+    const resource = createResource<Post>(client, { baseURL: "" });
     resource.setHeaders(() => ({ "X-Resource-Header": "resource-value" }));
 
     const headers = await resource.custom<Record<string, string>>("GET", "/echo-headers");

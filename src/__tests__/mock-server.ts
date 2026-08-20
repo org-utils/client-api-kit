@@ -48,9 +48,16 @@ export function resetPostAttempts(): void {
   postAttempts = 0;
 }
 
+/** Counts how many times the offset-paginated /posts list endpoint has been hit, to verify prefetched data isn't refetched. */
+export let listRequests = 0;
+export function resetListRequests(): void {
+  listRequests = 0;
+}
+
 export const handlers = [
   // Offset-paginated list
   http.get(`${BASE_URL}/posts`, ({ request }) => {
+    listRequests += 1;
     const url = new URL(request.url);
     const limit = Number(url.searchParams.get("limit") ?? 10);
     const page = Number(url.searchParams.get("page") ?? 1);
@@ -98,6 +105,14 @@ export const handlers = [
         },
       }),
     );
+  }),
+
+  // Custom escape-hatch endpoint - echoes back query params it received.
+  // Registered before /posts/:id so "export" isn't captured as an id.
+  http.get(`${BASE_URL}/posts/export`, ({ request }) => {
+    const url = new URL(request.url);
+    const format = url.searchParams.get("format");
+    return HttpResponse.json(successEnvelope({ format, count: posts.length }));
   }),
 
   http.get(`${BASE_URL}/posts/:id`, ({ params }) => {
