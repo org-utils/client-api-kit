@@ -1,5 +1,17 @@
 # client-api-kit
 
+## 0.1.0
+
+### Minor Changes
+
+- [#12](https://github.com/org-utils/client-api-kit/pull/12) [`9dae16a`](https://github.com/org-utils/client-api-kit/commit/9dae16a53d68a5526edac267e02d716c78a956d9) Thanks [@Anwarkamal143](https://github.com/Anwarkamal143)! - Added TanStack Query prefetch support via a new `client-api-kit/server` entry point (`createResourcePrefetcher`). Prefetch functions (`prefetchList`, `prefetchInfiniteList`, `prefetchGetById`, `prefetchCustom`) share the hooks' query keys, so they work server-side with `dehydrate`/`HydrationBoundary` (SSR hydration) and client-side before navigation. `createQueryClient` is now also exported from `client-api-kit/server`.
+  
+  Also reordered `createResource`'s generic type parameters to `<T, ListParams, CreateInput, UpdateInput>` and added a `custom` query-key builder to `createQueryKeys`.
+
+### Patch Changes
+
+- [#12](https://github.com/org-utils/client-api-kit/pull/12) [`083f784`](https://github.com/org-utils/client-api-kit/commit/083f784d4105e2a1ac560931fc1d64c666ca557f) Thanks [@Anwarkamal143](https://github.com/Anwarkamal143)! - added server prefetch
+
 ## 0.0.4
 
 ### Patch Changes
