@@ -20,18 +20,29 @@ const EMPTY_OFFSET_PAGINATION = {
 type ResourceConfig = Omit<AxiosRequestConfig, "baseURL">;
 
 /**
- * How a resource reports failures: `"throw"` rejects with `ApiClientError`
- * (the default - required by the TanStack Query hooks layer, which only
- * treats a rejected `queryFn` as an error); `"result"` never throws and
+ * How a resource reports outcomes. `"throw"` rejects with `ApiClientError`
+ * on failure (the default - required by the TanStack Query hooks layer, which
+ * only treats a rejected `queryFn` as an error); `"result"` never throws and
  * instead returns a typed {@link ResourceResult} union you can narrow with a
- * single `if (result.success)` check - convenient in server components and
- * server actions where a try/catch is awkward.
+ * single `if (result.success)` check; `"query"` returns a
+ * {@link QueryResult} shaped like a settled TanStack Query result
+ * (`data`/`error`/`isError`/`isSuccess`/...), useful when the same code runs
+ * server-side and client-side.
+ *
+ * @deprecated Renamed to {@link ResourceMode}. The `onError` option is kept
+ * as an alias for `mode`.
  */
-export type ResourceErrorMode = "throw" | "result";
+export type ResourceErrorMode = "throw" | "result" | "query";
+
+/**
+ * How a resource reports outcomes: `"throw"` (default), `"result"`, or
+ * `"query"` - see {@link ResourceErrorMode} for the trade-offs.
+ */
+export type ResourceMode = ResourceErrorMode;
 
 /**
  * The discriminated result every resource method resolves to when the
- * resource is created with `onError: "result"`. Narrow with `if (result.success)`:
+ * resource is created with `mode: "result"`. Narrow with `if (result.success)`:
  *
  * ```ts
  * const res = await users.list({ page: 1 });
@@ -44,11 +55,52 @@ export type ResourceResult<T> =
   | { success: false; error: ApiClientError };
 
 /**
+ * The result every resource method resolves to when the resource is created
+ * with `mode: "query"`: a settled, TanStack Query-shaped object - the same
+ * field names the hooks return (`data`, `error`, `isError`, `isSuccess`,
+ * `isLoading`, ...), but type-safe: `status` is a strict discriminant and
+ * the boolean flags are literal types, so the compiler knows `data` exists
+ * exactly when `isSuccess`, and `error` exactly when `isError`.
+ *
+ * `isPending`/`isLoading`/`isFetching` are always `false`: after `await` the
+ * call is settled - there is no in-flight state to model. They exist purely
+ * for shape parity, so a component can swap a hook call for a plain resource
+ * call without changing its field access.
+ *
+ * ```ts
+ * const res = await users.getById("1"); // mode: "query"
+ * if (res.isError) return res.error.code; // error: ApiClientError
+ * res.data; // data: User
+ * ```
+ */
+export type QueryResult<T> =
+  | {
+      status: "success";
+      data: T;
+      error: null;
+      isPending: false;
+      isSuccess: true;
+      isError: false;
+      isLoading: false;
+      isFetching: false;
+    }
+  | {
+      status: "error";
+      data: undefined;
+      error: ApiClientError;
+      isPending: false;
+      isSuccess: false;
+      isError: true;
+      isLoading: false;
+      isFetching: false;
+    };
+
+/**
  * Optional runtime validators applied to `response.data` before it's
  * returned, so the typed generics are backed by real checks at runtime (e.g.
  * zod schemas). A validator that throws (zod's `parse`) is normalized into
  * an `ApiClientError` with `kind: "unknown"` and the original error as its
- * cause - thrown or returned per the resource's `onError` mode.
+ * cause - thrown or returned per the resource's mode.
  */
 export type ResourceParsers<T> = {
   /** Validates list items before they're wrapped in `ListResult`. */
@@ -62,22 +114,28 @@ export type ResourceParsers<T> = {
 };
 
 /** Options accepted by `createResource`: the resource path plus any extra axios config. */
-type CreateResourceOptions<Mode extends ResourceErrorMode = "throw", T = unknown> = AxiosRequestConfig & {
+type CreateResourceOptions<Mode extends ResourceMode = "throw", T = unknown> = AxiosRequestConfig & {
   /** Path relative to the client's baseURL, e.g. "/users". */
   baseURL: string;
   /**
-   * How failures are reported. `"throw"` (default) rejects with
+   * How outcomes are reported: `"throw"` (default) rejects with
    * `ApiClientError`; `"result"` returns a typed {@link ResourceResult} union
-   * instead of throwing. Use `"throw"` with the hooks layer
-   * (`createResourceHooks` needs rejected promises); `"result"` is convenient
-   * for server components/server actions.
+   * instead of throwing; `"query"` returns a {@link QueryResult} shaped like
+   * a settled TanStack Query result. Use `"throw"` with the hooks layer
+   * (`createResourceHooks` needs rejected promises); `"result"` and `"query"`
+   * are convenient for server components/server actions.
+   */
+  mode?: Mode;
+  /**
+   * Alias for `mode`, kept for backwards compatibility. When both are given,
+   * `mode` wins.
    */
   onError?: Mode;
   /** Optional runtime validators (e.g. zod schemas) for response payloads. */
   parse?: ResourceParsers<T>;
 };
 
-/** The resource contract when `onError: "result"` - every method returns a {@link ResourceResult} instead of throwing. */
+/** The resource contract when `mode: "result"` - every method returns a {@link ResourceResult} instead of throwing. */
 export interface SafeResourceClient<
   T,
   ListParams extends object = Record<string, unknown>,
@@ -111,16 +169,52 @@ export interface SafeResourceClient<
   ): SafeResourceClient<T, ListParams, CreateInput, UpdateInput>;
 }
 
-/** Picks the resource contract based on the `onError` mode. */
+/** The resource contract when `mode: "query"` - every method resolves a settled, TanStack Query-shaped {@link QueryResult} instead of throwing. */
+export interface QueryResourceClient<
+  T,
+  ListParams extends object = Record<string, unknown>,
+  CreateInput = Partial<T>,
+  UpdateInput = Partial<T>,
+> {
+  list(params?: ListParams, options?: RequestOptions): Promise<QueryResult<ListResult<T>>>;
+  getById(id: string | number, options?: RequestOptions): Promise<QueryResult<T>>;
+  create(input: CreateInput, options?: RequestOptions): Promise<QueryResult<T>>;
+  update(id: string | number, input: UpdateInput, options?: RequestOptions): Promise<QueryResult<T>>;
+  remove(id: string | number, options?: RequestOptions): Promise<QueryResult<null>>;
+  custom<R = unknown>(
+    method?: "GET" | "POST" | "PUT" | "DELETE",
+    path?: string,
+    options?: {
+      data?: any;
+      params?: Record<string, any>;
+      options?: RequestOptions;
+      /** Per-call runtime validator for this request's payload. */
+      parse?: (data: unknown) => R;
+    },
+  ): Promise<QueryResult<R>>;
+  setConfig(
+    newConfig:
+      | Partial<AxiosRequestConfig>
+      | ((currentConfig: AxiosRequestConfig) => Promise<Partial<AxiosRequestConfig>>),
+  ): Promise<QueryResourceClient<T, ListParams, CreateInput, UpdateInput>>;
+  setClient(newClient: ApiClient): QueryResourceClient<T, ListParams, CreateInput, UpdateInput>;
+  setHeaders(
+    headerMethod: () => MaybePromise<Partial<Record<string, any>>> | undefined,
+  ): QueryResourceClient<T, ListParams, CreateInput, UpdateInput>;
+}
+
+/** Picks the resource contract based on the `mode` option. */
 type ResourceClientByMode<
-  Mode extends ResourceErrorMode,
+  Mode extends ResourceMode,
   T,
   ListParams extends object,
   CreateInput,
   UpdateInput,
 > = Mode extends "result"
   ? SafeResourceClient<T, ListParams, CreateInput, UpdateInput>
-  : ResourceClient<T, CreateInput, UpdateInput, ListParams>;
+  : Mode extends "query"
+    ? QueryResourceClient<T, ListParams, CreateInput, UpdateInput>
+    : ResourceClient<T, CreateInput, UpdateInput, ListParams>;
 
 /** Loose internal shape both contracts share - narrowed to the mode's contract on return. */
 type AnyResource = {
@@ -153,15 +247,18 @@ type MaybePromise<T> = T | Promise<T>;
  * @param client - The shared {@link ApiClient} to issue requests through.
  * @param options - `{ baseURL: "/users", ... }` - the resource path plus any
  *   axios request config to apply to every request (e.g. `params`, `headers`),
- *   an `onError` mode, and optional `parse` validators.
- * @returns A {@link ResourceClient} (or {@link SafeResourceClient} when
- *   `onError: "result"`) with `list`, `getById`, `create`, `update`,
- *   `remove`, `custom`, and runtime configuration setters.
+ *   a `mode` option, and optional `parse` validators.
+ * @returns A {@link ResourceClient} (or {@link SafeResourceClient} /
+ *   {@link QueryResourceClient} when `mode` is `"result"` / `"query"`) with
+ *   `list`, `getById`, `create`, `update`, `remove`, `custom`, and runtime
+ *   configuration setters.
  *
- * The return contract is chosen by overloading on the `onError` option:
+ * The return contract is chosen by overloading on the `mode` option:
  * `"throw"` (the default) returns a {@link ResourceClient} that rejects with
  * `ApiClientError`; `"result"` returns a {@link SafeResourceClient} whose
- * methods resolve a typed {@link ResourceResult} instead of throwing.
+ * methods resolve a typed {@link ResourceResult} instead of throwing;
+ * `"query"` returns a {@link QueryResourceClient} whose methods resolve a
+ * settled {@link QueryResult} shaped like a TanStack Query result.
  *
  * @example
  * const users = createResource<User, OffsetPaginationParams, CreateUserInput, UpdateUserInput>(
@@ -172,9 +269,16 @@ type MaybePromise<T> = T | Promise<T>;
  *
  * @example
  * // Typed success/error results for server actions - no try/catch needed:
- * const users = createResource<User>(apiClient, { baseURL: "/users", onError: "result" });
+ * const users = createResource<User>(apiClient, { baseURL: "/users", mode: "result" });
  * const res = await users.getById("1");
  * if (!res.success) return res.error.message; // error is ApiClientError
+ * res.data; // data is User
+ *
+ * @example
+ * // TanStack Query-shaped results - same field names as the hooks, type-safe:
+ * const users = createResource<User>(apiClient, { baseURL: "/users", mode: "query" });
+ * const res = await users.getById("1");
+ * if (res.isError) return res.error.code; // error is ApiClientError
  * res.data; // data is User
  */
 export function createResource<
@@ -200,12 +304,23 @@ export function createResource<
   ListParams extends object = Record<string, unknown>,
   CreateInput = Partial<T>,
   UpdateInput = Partial<T>,
-  Mode extends ResourceErrorMode = "throw",
+>(
+  client: ApiClient,
+  options: CreateResourceOptions<"query" | "result" | "throw", T>,
+): QueryResourceClient<T, ListParams, CreateInput, UpdateInput>;
+export function createResource<
+  T,
+  ListParams extends object = Record<string, unknown>,
+  CreateInput = Partial<T>,
+  UpdateInput = Partial<T>,
+  Mode extends ResourceMode = "throw",
 >(
   client: ApiClient,
   options: CreateResourceOptions<Mode, T>,
 ): ResourceClientByMode<Mode, T, ListParams, CreateInput, UpdateInput> {
-  const { baseURL: basePath, onError = "throw", parse, ...initialConfig } = options;
+  const { baseURL: basePath, mode, onError = "throw", parse, ...initialConfig } = options;
+  /** Effective mode: `mode` wins over the deprecated `onError` alias when both are given. */
+  const errorMode = mode ?? onError;
   /** The client used for requests; replaceable at runtime via `setClient`. */
   let rClient = client;
   /** Base config merged into every request; replaceable via `setConfig`. */
@@ -298,18 +413,45 @@ export function createResource<
   }
 
   /**
-   * Runs an operation and reports failures per the resource's `onError` mode:
-   * `"throw"` rethrows, `"result"` returns a typed {@link ResourceResult}.
+   * Runs an operation and reports outcomes per the resource's mode:
+   * `"throw"` rethrows, `"result"` returns a typed {@link ResourceResult},
+   * `"query"` returns a settled, TanStack Query-shaped {@link QueryResult}.
    *
    * @param exec - The operation to run (request + validation).
-   * @returns The operation's value, or a result object when in `"result"` mode.
+   * @returns The operation's value, or a result object when in a result mode.
    */
-  async function settle<R>(exec: () => Promise<R>): Promise<R | ResourceResult<R>> {
-    if (onError === "throw") return exec();
+  async function settle<R>(exec: () => Promise<R>): Promise<R | ResourceResult<R> | QueryResult<R>> {
+    if (errorMode === "throw") return exec();
     try {
-      return { success: true as const, data: await exec() };
+      const data = await exec();
+      if (errorMode === "result") {
+        return { success: true as const, data };
+      }
+      return {
+        status: "success" as const,
+        data,
+        error: null,
+        isPending: false,
+        isSuccess: true,
+        isError: false,
+        isLoading: false,
+        isFetching: false,
+      };
     } catch (cause) {
-      return { success: false as const, error: ApiClientError.unknown(cause) };
+      const error = ApiClientError.unknown(cause);
+      if (errorMode === "result") {
+        return { success: false as const, error };
+      }
+      return {
+        status: "error" as const,
+        data: undefined,
+        error,
+        isPending: false,
+        isSuccess: false,
+        isError: true,
+        isLoading: false,
+        isFetching: false,
+      };
     }
   }
 
