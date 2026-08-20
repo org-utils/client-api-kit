@@ -1,5 +1,17 @@
 # client-api-kit
 
+## 0.2.0
+
+### Minor Changes
+
+- [#14](https://github.com/org-utils/client-api-kit/pull/14) [`f1b3050`](https://github.com/org-utils/client-api-kit/commit/f1b3050d2175a9e9f1e6e2a631105b96bc2ddec9) Thanks [@Anwarkamal143](https://github.com/Anwarkamal143)! - Added `onError: "result"` to `createResource`: methods then resolve a typed `ResourceResult<T>` union (`{ success: true; data }` or `{ success: false; error: ApiClientError }`) instead of throwing, convenient for server components and server actions. The default `"throw"` mode is unchanged (and still required by the hooks layer).
+  
+  Added optional `parse` validators to `createResource` options - one per method (`list`, `getById`, `create`, `update`), applied to `response.data` at runtime before it's returned (works with zod schemas). A failing validator is normalized into an `ApiClientError` with `kind: "unknown"` and the original error as its cause. `custom()` accepts a per-call `parse` for its payload.
+
+### Patch Changes
+
+- [#12](https://github.com/org-utils/client-api-kit/pull/12) [`083f784`](https://github.com/org-utils/client-api-kit/commit/083f784d4105e2a1ac560931fc1d64c666ca557f) Thanks [@Anwarkamal143](https://github.com/Anwarkamal143)! - updated version
+
 ## 0.1.0
 
 ### Minor Changes
