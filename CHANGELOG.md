@@ -1,5 +1,20 @@
 # client-api-kit
 
+## 0.3.0
+
+### Minor Changes
+
+- [#14](https://github.com/org-utils/client-api-kit/pull/14) [`f1b3050`](https://github.com/org-utils/client-api-kit/commit/f1b3050d2175a9e9f1e6e2a631105b96bc2ddec9) Thanks [@Anwarkamal143](https://github.com/Anwarkamal143)! - Added two non-throwing modes to `createResource`, selected via the new `mode` option (default `"throw"`, unchanged; the earlier `onError` option is kept as a deprecated alias):
+  
+  - `mode: "result"` - every method resolves a typed `ResourceResult<T>` union (`{ success: true; data }` or `{ success: false; error: ApiClientError }`) instead of throwing, convenient for server components and server actions.
+  - `mode: "query"` - every method resolves a settled, TanStack Query-shaped `QueryResult<T>` with the same field names the hooks return (`data`, `error`, `status`, `isError`, `isSuccess`, `isLoading`, `isPending`, `isFetching`). It is type-safe where `UseQueryResult` is loose: `status` is a strict discriminant and the boolean flags are literal types, so `data` narrows to `T` exactly when `isSuccess` and `error` to `ApiClientError` exactly when `isError`. `isLoading`/`isPending`/`isFetching` are always `false` after `await` (the call is settled), kept for shape parity so a component can swap a hook call for a plain resource call.
+  
+  Also added optional `parse` validators to `createResource` options - one per method (`list`, `getById`, `create`, `update`), applied to `response.data` at runtime before it's returned (works with zod schemas). A failing validator is normalized into an `ApiClientError` with `kind: "unknown"` and the original error as its cause. `custom()` accepts a per-call `parse` for its payload.
+
+### Patch Changes
+
+- [#12](https://github.com/org-utils/client-api-kit/pull/12) [`083f784`](https://github.com/org-utils/client-api-kit/commit/083f784d4105e2a1ac560931fc1d64c666ca557f) Thanks [@Anwarkamal143](https://github.com/Anwarkamal143)! - Update minor
+
 ## 0.2.0
 
 ### Minor Changes
