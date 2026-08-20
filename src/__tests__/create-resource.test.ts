@@ -16,6 +16,7 @@ function buildResource() {
   const client = createApiClient({ baseURL: BASE_URL });
   return createResource<Post, OffsetPaginationParams, CreatePostInput, UpdatePostInput>(client, {
     baseURL: "/posts",
+    mode: "throw",
   });
 }
 
@@ -53,6 +54,7 @@ describe("createResource - cursor-paginated feed", () => {
     const client = createApiClient({ baseURL: BASE_URL });
     const feed = createResource<Post, { cursor?: string; limit: number }, CreatePostInput, UpdatePostInput>(client, {
       baseURL: "/feed",
+      mode: "throw",
     });
 
     const first = await feed.list({ limit: 10 });
@@ -122,7 +124,7 @@ describe("createResource - CRUD", () => {
 describe("createResource - custom requests", () => {
   it("custom sends per-request options headers", async () => {
     const client = createApiClient({ baseURL: BASE_URL });
-    const resource = createResource<Post>(client, { baseURL: "" });
+    const resource = createResource<Post>(client, { baseURL: "", mode: "throw" });
 
     const headers = await resource.custom<Record<string, string>>("GET", "/echo-headers", {
       options: { headers: { "X-Custom-Option": "option-value" } },
@@ -133,7 +135,7 @@ describe("createResource - custom requests", () => {
 
   it("setHeaders applies resource-level headers to every request", async () => {
     const client = createApiClient({ baseURL: BASE_URL });
-    const resource = createResource<Post>(client, { baseURL: "" });
+    const resource = createResource<Post>(client, { baseURL: "", mode: "throw" });
     resource.setHeaders(() => ({ "X-Resource-Header": "resource-value" }));
 
     const headers = await resource.custom<Record<string, string>>("GET", "/echo-headers");

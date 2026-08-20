@@ -95,6 +95,37 @@ export type QueryResult<T> =
       isFetching: false;
     };
 
+/** The union of a plain payload and every non-throwing result envelope. */
+export type AnyResult<T> = T | ResourceResult<T> | QueryResult<T>;
+
+/**
+ * Extracts the payload from any resource result - plain data, a
+ * `ResourceResult`, or a `QueryResult` - and throws the `ApiClientError`
+ * when the call failed. Used internally by the hooks layer and the prefetcher
+ * so they work with any resource mode. Also handy for forwarding a resource
+ * call through a helper that must produce a plain value.
+ *
+ * @param result - The resolved value of any resource method.
+ * @returns The payload, or throws the failure's `ApiClientError`.
+ *
+ * @example
+ * const res = await users.getById("1"); // any mode
+ * const user = unwrapResourceResult(res); // User, or throws ApiClientError
+ */
+export function unwrapResourceResult<T>(result: AnyResult<T>): T {
+  if (result !== null && typeof result === "object") {
+    if ("success" in result) {
+      if (result.success) return result.data;
+      throw result.error;
+    }
+    if ("status" in result) {
+      if (result.status === "error") throw result.error;
+      return result.data;
+    }
+  }
+  return result as T;
+}
+
 /**
  * Optional runtime validators applied to `response.data` before it's
  * returned, so the typed generics are backed by real checks at runtime (e.g.
@@ -114,16 +145,16 @@ export type ResourceParsers<T> = {
 };
 
 /** Options accepted by `createResource`: the resource path plus any extra axios config. */
-type CreateResourceOptions<Mode extends ResourceMode = "throw", T = unknown> = AxiosRequestConfig & {
+type CreateResourceOptions<Mode extends ResourceMode = "query", T = unknown> = AxiosRequestConfig & {
   /** Path relative to the client's baseURL, e.g. "/users". */
   baseURL: string;
   /**
-   * How outcomes are reported: `"throw"` (default) rejects with
-   * `ApiClientError`; `"result"` returns a typed {@link ResourceResult} union
-   * instead of throwing; `"query"` returns a {@link QueryResult} shaped like
-   * a settled TanStack Query result. Use `"throw"` with the hooks layer
-   * (`createResourceHooks` needs rejected promises); `"result"` and `"query"`
-   * are convenient for server components/server actions.
+   * How outcomes are reported. `"query"` (default) resolves a
+   * {@link QueryResult} shaped like a settled TanStack Query result;
+   * `"result"` returns a typed {@link ResourceResult} union instead of
+   * throwing; `"throw"` rejects with `ApiClientError`. Whatever the mode,
+   * the hooks layer (`createResourceHooks`) and the prefetcher work with the
+   * resource unchanged. Switch modes at runtime via `setMode`.
    */
   mode?: Mode;
   /**
@@ -167,6 +198,13 @@ export interface SafeResourceClient<
   setHeaders(
     headerMethod: () => MaybePromise<Partial<Record<string, any>>> | undefined,
   ): SafeResourceClient<T, ListParams, CreateInput, UpdateInput>;
+  /**
+   * Switches the resource's mode at runtime, like `setHeaders`. The switch is
+   * global to the resource (any handle created from it sees the new mode).
+   * Returns the same resource typed for the new mode, so callers get the
+   * precise contract: `users.setMode("result")` is a `SafeResourceClient`.
+   */
+  setMode<M extends ResourceMode>(mode: M): ResourceClientByMode<M, T, ListParams, CreateInput, UpdateInput>;
 }
 
 /** The resource contract when `mode: "query"` - every method resolves a settled, TanStack Query-shaped {@link QueryResult} instead of throwing. */
@@ -201,6 +239,29 @@ export interface QueryResourceClient<
   setHeaders(
     headerMethod: () => MaybePromise<Partial<Record<string, any>>> | undefined,
   ): QueryResourceClient<T, ListParams, CreateInput, UpdateInput>;
+  /**
+   * Switches the resource's mode at runtime, like `setHeaders`. The switch is
+   * global to the resource (any handle created from it sees the new mode).
+   * Returns the same resource typed for the new mode, so callers get the
+   * precise contract: `users.setMode("result")` is a `SafeResourceClient`.
+   */
+  setMode<M extends ResourceMode>(mode: M): ResourceClientByMode<M, T, ListParams, CreateInput, UpdateInput>;
+}
+
+/** The resource contract when `mode: "throw"` - every method rejects with `ApiClientError` on failure. */
+export interface ThrowResourceClient<
+  T,
+  ListParams extends object = Record<string, unknown>,
+  CreateInput = Partial<T>,
+  UpdateInput = Partial<T>,
+> extends ResourceClient<T, CreateInput, UpdateInput, ListParams> {
+  /**
+   * Switches the resource's mode at runtime, like `setHeaders`. The switch is
+   * global to the resource (any handle created from it sees the new mode).
+   * Returns the same resource typed for the new mode, so callers get the
+   * precise contract: `users.setMode("result")` is a `SafeResourceClient`.
+   */
+  setMode<M extends ResourceMode>(mode: M): ResourceClientByMode<M, T, ListParams, CreateInput, UpdateInput>;
 }
 
 /** Picks the resource contract based on the `mode` option. */
@@ -214,7 +275,23 @@ type ResourceClientByMode<
   ? SafeResourceClient<T, ListParams, CreateInput, UpdateInput>
   : Mode extends "query"
     ? QueryResourceClient<T, ListParams, CreateInput, UpdateInput>
-    : ResourceClient<T, CreateInput, UpdateInput, ListParams>;
+    : ThrowResourceClient<T, ListParams, CreateInput, UpdateInput>;
+
+/**
+ * Any of the three mode-specific resource contracts. Accepted by
+ * `createResourceHooks` and `createResourcePrefetcher`, which are
+ * mode-agnostic: they extract the payload (or throw the `ApiClientError`)
+ * from whatever mode the resource is in via {@link unwrapResourceResult}.
+ */
+export type AnyResourceClient<
+  T,
+  ListParams extends object = Record<string, unknown>,
+  CreateInput = Partial<T>,
+  UpdateInput = Partial<T>,
+> =
+  | ThrowResourceClient<T, ListParams, CreateInput, UpdateInput>
+  | SafeResourceClient<T, ListParams, CreateInput, UpdateInput>
+  | QueryResourceClient<T, ListParams, CreateInput, UpdateInput>;
 
 /** Loose internal shape both contracts share - narrowed to the mode's contract on return. */
 type AnyResource = {
@@ -227,6 +304,7 @@ type AnyResource = {
   setConfig: (newConfig: any) => Promise<any>;
   setClient: (newClient: ApiClient) => any;
   setHeaders: (headerMethod: any) => any;
+  setMode: (mode: any) => any;
 };
 
 /** A value that may be produced synchronously or asynchronously. */
@@ -248,24 +326,24 @@ type MaybePromise<T> = T | Promise<T>;
  * @param options - `{ baseURL: "/users", ... }` - the resource path plus any
  *   axios request config to apply to every request (e.g. `params`, `headers`),
  *   a `mode` option, and optional `parse` validators.
- * @returns A {@link ResourceClient} (or {@link SafeResourceClient} /
- *   {@link QueryResourceClient} when `mode` is `"result"` / `"query"`) with
- *   `list`, `getById`, `create`, `update`, `remove`, `custom`, and runtime
- *   configuration setters.
+ * @returns A {@link QueryResourceClient} (or {@link SafeResourceClient} /
+ *   {@link ThrowResourceClient} when `mode` is `"result"` / `"throw"`) with
+ *   `list`, `getById`, `create`, `update`, `remove`, `custom`, runtime
+ *   configuration setters, and `setMode` for switching modes on the fly.
  *
  * The return contract is chosen by overloading on the `mode` option:
- * `"throw"` (the default) returns a {@link ResourceClient} that rejects with
- * `ApiClientError`; `"result"` returns a {@link SafeResourceClient} whose
- * methods resolve a typed {@link ResourceResult} instead of throwing;
- * `"query"` returns a {@link QueryResourceClient} whose methods resolve a
- * settled {@link QueryResult} shaped like a TanStack Query result.
+ * `"query"` (the default) returns a {@link QueryResourceClient} whose methods
+ * resolve a settled {@link QueryResult} shaped like a TanStack Query result;
+ * `"result"` returns a {@link SafeResourceClient} whose methods resolve a
+ * typed {@link ResourceResult} instead of throwing; `"throw"` returns a
+ * {@link ThrowResourceClient} that rejects with `ApiClientError`.
  *
  * @example
  * const users = createResource<User, OffsetPaginationParams, CreateUserInput, UpdateUserInput>(
  *   apiClient,
  *   { baseURL: "/users" },
- * );
- * const page = await users.list({ page: 1, limit: 20 });
+ * ); // mode defaults to "query"
+ * const page = await users.list({ page: 1, limit: 20 }); // QueryResult<ListResult<User>>
  *
  * @example
  * // Typed success/error results for server actions - no try/catch needed:
@@ -275,11 +353,10 @@ type MaybePromise<T> = T | Promise<T>;
  * res.data; // data is User
  *
  * @example
- * // TanStack Query-shaped results - same field names as the hooks, type-safe:
- * const users = createResource<User>(apiClient, { baseURL: "/users", mode: "query" });
- * const res = await users.getById("1");
- * if (res.isError) return res.error.code; // error is ApiClientError
- * res.data; // data is User
+ * // Switch modes at runtime - every handle sees the new mode:
+ * const users = createResource<User>(apiClient, { baseURL: "/users" }); // "query"
+ * const safe = users.setMode("result");
+ * const res = await safe.getById("1"); // { success: true, data } | { success: false, error }
  */
 export function createResource<
   T,
@@ -288,8 +365,8 @@ export function createResource<
   UpdateInput = Partial<T>,
 >(
   client: ApiClient,
-  options: CreateResourceOptions<"throw", T>,
-): ResourceClient<T, CreateInput, UpdateInput, ListParams>;
+  options: CreateResourceOptions<"query", T>,
+): QueryResourceClient<T, ListParams, CreateInput, UpdateInput>;
 export function createResource<
   T,
   ListParams extends object = Record<string, unknown>,
@@ -297,7 +374,7 @@ export function createResource<
   UpdateInput = Partial<T>,
 >(
   client: ApiClient,
-  options: CreateResourceOptions<"result" | "throw", T>,
+  options: CreateResourceOptions<"result", T>,
 ): SafeResourceClient<T, ListParams, CreateInput, UpdateInput>;
 export function createResource<
   T,
@@ -306,21 +383,21 @@ export function createResource<
   UpdateInput = Partial<T>,
 >(
   client: ApiClient,
-  options: CreateResourceOptions<"query" | "result" | "throw", T>,
-): QueryResourceClient<T, ListParams, CreateInput, UpdateInput>;
+  options: CreateResourceOptions<"throw", T>,
+): ThrowResourceClient<T, ListParams, CreateInput, UpdateInput>;
 export function createResource<
   T,
   ListParams extends object = Record<string, unknown>,
   CreateInput = Partial<T>,
   UpdateInput = Partial<T>,
-  Mode extends ResourceMode = "throw",
+  Mode extends ResourceMode = "query",
 >(
   client: ApiClient,
   options: CreateResourceOptions<Mode, T>,
 ): ResourceClientByMode<Mode, T, ListParams, CreateInput, UpdateInput> {
-  const { baseURL: basePath, mode, onError = "throw", parse, ...initialConfig } = options;
-  /** Effective mode: `mode` wins over the deprecated `onError` alias when both are given. */
-  const errorMode = mode ?? onError;
+  const { baseURL: basePath, mode, onError, parse, ...initialConfig } = options;
+  /** Effective mode: `mode` wins over the deprecated `onError` alias when both are given; defaults to `"query"`. */
+  let errorMode = mode ?? onError ?? "query";
   /** The client used for requests; replaceable at runtime via `setClient`. */
   let rClient = client;
   /** Base config merged into every request; replaceable via `setConfig`. */
@@ -682,6 +759,22 @@ export function createResource<
       headers = headerMethod;
 
       return resource;
+    },
+
+    /**
+     * Switches the resource's mode at runtime (`"query"` | `"result"` |
+     * `"throw"`), like `setHeaders`. The switch is global to the resource -
+     * any handle created from it (including ones captured earlier) sees the
+     * new mode. Returns the same resource typed for the new mode, so the
+     * call site gets the precise contract.
+     *
+     * @param mode - The mode to switch to.
+     * @returns This same resource, typed for the new mode, so calls can be chained.
+     */
+    setMode<M extends ResourceMode>(mode: M) {
+      errorMode = mode;
+
+      return resource as ResourceClientByMode<M, T, ListParams, CreateInput, UpdateInput>;
     },
   };
 

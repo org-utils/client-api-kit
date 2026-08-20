@@ -5,9 +5,13 @@ import {
   type QueryClient,
   type QueryKey,
 } from "@tanstack/react-query";
-import type { ListResult, ResourceClient } from "client-api-types/client";
+import type { ListResult } from "client-api-types/client";
 import type { RequestOptions } from "client-api-types";
 import type { ApiClientError } from "../errors/ApiClientError.js";
+import {
+  unwrapResourceResult,
+  type AnyResourceClient,
+} from "../resource/create-resource.js";
 import { createQueryKeys, type QueryKeyFactory } from "../resource/query-keys.js";
 import { isCursorPagination } from "../utils/index.js";
 
@@ -133,9 +137,11 @@ export interface ResourcePrefetcher<T, ListParams extends object> {
  * @typeParam ListParams - List params shape.
  * @typeParam CreateInput - Payload type for `create`.
  * @typeParam UpdateInput - Payload type for `update`.
- * @param resource - The resource created with `createResource(...)`. Use the
- *   same instance and `resourceName` as the one passed to `createResourceHooks`
- *   so the query keys line up.
+ * @param resource - The resource created with `createResource(...)`. Works in
+ *   any mode (`"query"` default, `"result"`, or `"throw"`): the payload is
+ *   extracted from the mode's result shape internally. Use the same instance
+ *   and `resourceName` as the one passed to `createResourceHooks` so the
+ *   query keys line up.
  * @param resourceName - Stable, unique name, e.g. `"users"`. Must match the
  *   one used by `createResourceHooks`.
  * @returns The {@link ResourcePrefetcher} object with `prefetchList`,
@@ -157,7 +163,7 @@ export function createResourcePrefetcher<
   CreateInput = Partial<T>,
   UpdateInput = Partial<T>,
 >(
-  resource: ResourceClient<T, CreateInput, UpdateInput, ListParams>,
+  resource: AnyResourceClient<T, ListParams, CreateInput, UpdateInput>,
   resourceName: string,
 ): ResourcePrefetcher<T, ListParams> {
   const queryKeys = createQueryKeys<ListParams>(resourceName);
@@ -172,7 +178,7 @@ export function createResourcePrefetcher<
   ): Promise<void> {
     await queryClient.prefetchQuery({
       queryKey: queryKeys.list(params),
-      queryFn: ({ signal }) => resource.list(params, { signal }),
+      queryFn: async ({ signal }) => unwrapResourceResult(await resource.list(params, { signal })),
       staleTime: PREFETCH_STALE_TIME,
       ...options,
     });
@@ -195,8 +201,8 @@ export function createResourcePrefetcher<
   ): Promise<void> {
     await queryClient.prefetchInfiniteQuery({
       queryKey: queryKeys.infinite(params),
-      queryFn: ({ pageParam, signal }) =>
-        resource.list({ ...(params as ListParams), cursor: pageParam }, { signal }),
+      queryFn: async ({ pageParam, signal }) =>
+        unwrapResourceResult(await resource.list({ ...(params as ListParams), cursor: pageParam }, { signal })),
       initialPageParam: undefined,
       pages: 1,
       getNextPageParam: (lastPage) =>
@@ -214,7 +220,7 @@ export function createResourcePrefetcher<
   ): Promise<void> {
     await queryClient.prefetchQuery({
       queryKey: queryKeys.detail(id),
-      queryFn: ({ signal }) => resource.getById(id, { signal }),
+      queryFn: async ({ signal }) => unwrapResourceResult(await resource.getById(id, { signal })),
       staleTime: PREFETCH_STALE_TIME,
       ...options,
     });
@@ -236,14 +242,16 @@ export function createResourcePrefetcher<
 
     await queryClient.prefetchQuery({
       queryKey: queryKeys.custom(method, path, params),
-      queryFn: ({ signal }) =>
-        resource.custom<R>(method, path, {
-          ...(data !== undefined ? { data } : {}),
-          ...(params !== undefined ? { params } : {}),
-          ...(requestOptions || signal
-            ? { options: { ...requestOptions, ...(signal ? { signal } : {}) } }
-            : {}),
-        }),
+      queryFn: async ({ signal }) =>
+        unwrapResourceResult(
+          await resource.custom<R>(method, path, {
+            ...(data !== undefined ? { data } : {}),
+            ...(params !== undefined ? { params } : {}),
+            ...(requestOptions || signal
+              ? { options: { ...requestOptions, ...(signal ? { signal } : {}) } }
+              : {}),
+          }),
+        ),
       staleTime: PREFETCH_STALE_TIME,
       ...options,
     });

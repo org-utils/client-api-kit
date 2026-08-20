@@ -155,6 +155,7 @@ describe("createResource - runtime validation (parse)", () => {
     const client = createApiClient({ baseURL: BASE_URL });
     const posts = createResource<Post>(client, {
       baseURL: "/posts",
+      mode: "throw",
       parse: {
         getById: () => {
           throw new Error("Invalid post payload");

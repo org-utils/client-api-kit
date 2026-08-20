@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { createApiClient } from "../core/create-client.js";
-import { createResource, type QueryResult } from "../resource/create-resource.js";
+import {
+  createResource,
+  type QueryResult,
+  type SafeResourceClient,
+} from "../resource/create-resource.js";
 import { ApiClientError } from "../errors/ApiClientError.js";
 import { isOffsetPagination } from "../utils/index.js";
 import { BASE_URL, resetPosts, type Post } from "./mock-server.js";
@@ -159,10 +163,80 @@ describe("createResource - mode: 'query'", () => {
 
   it("mode wins over the deprecated onError alias when both are given", async () => {
     const client = createApiClient({ baseURL: BASE_URL });
-    const resource = createResource<Post>(client, { baseURL: "/posts", mode: "result", onError: "query" });
+    // Contradictory mode/onError values don't typecheck against any overload;
+    // cast the options to assert the runtime precedence rule (`mode` wins).
+    const resource = createResource<Post>(
+      client,
+      { baseURL: "/posts", mode: "result", onError: "query" } as never as Parameters<typeof createResource<Post>>[1],
+    );
 
     const result = await resource.getById("1");
     expect("success" in result).toBe(true);
+  });
+});
+
+describe("createResource - default mode and setMode", () => {
+  beforeEach(() => resetPosts());
+
+  it("defaults to mode 'query' (TanStack Query-shaped results)", async () => {
+    const client = createApiClient({ baseURL: BASE_URL });
+    const posts = createResource<Post>(client, { baseURL: "/posts" });
+
+    const result = await posts.getById("1");
+    expect(result.status).toBe("success");
+    if (result.isError) return;
+    expect(result.data.title).toBe("Post 1");
+  });
+
+  it("setMode('result') returns the resource typed for the new mode and switches behavior", async () => {
+    const client = createApiClient({ baseURL: BASE_URL });
+    const posts = createResource<Post>(client, { baseURL: "/posts" });
+    const safe: SafeResourceClient<Post> = posts.setMode("result");
+
+    const ok = await safe.getById("1");
+    expect("success" in ok).toBe(true);
+    if (!ok.success) return;
+    expect(ok.data.title).toBe("Post 1");
+
+    const missing = await safe.getById("does-not-exist");
+    expect(missing.success).toBe(false);
+    if (missing.success) return;
+    expect(missing.error).toBeInstanceOf(ApiClientError);
+    expect(missing.error.statusCode).toBe(404);
+  });
+
+  it("setMode is global - previously captured handles see the new mode", async () => {
+    const client = createApiClient({ baseURL: BASE_URL });
+    const posts = createResource<Post>(client, { baseURL: "/posts" });
+    const earlier = posts; // captured before the switch
+
+    posts.setMode("result");
+
+    const result = await earlier.getById("1");
+    expect("success" in result).toBe(true);
+  });
+
+  it("setMode('throw') makes methods reject with ApiClientError again", async () => {
+    const client = createApiClient({ baseURL: BASE_URL });
+    const posts = createResource<Post>(client, { baseURL: "/posts" });
+
+    const throwing = posts.setMode("throw");
+
+    await expect(throwing.getById("does-not-exist")).rejects.toMatchObject({ statusCode: 404 });
+    const post = await throwing.getById("1");
+    expect(post.id).toBe("1");
+  });
+
+  it("setMode switches back to 'query' from another mode", async () => {
+    const client = createApiClient({ baseURL: BASE_URL });
+    const posts = createResource<Post>(client, { baseURL: "/posts", mode: "result" });
+
+    const query = posts.setMode("query");
+
+    const result = await query.getById("1");
+    expect(result.status).toBe("success");
+    if (result.isError) return;
+    expect(result.data.title).toBe("Post 1");
   });
 });
 
