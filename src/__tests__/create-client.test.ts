@@ -39,6 +39,19 @@ describe("createApiClient", () => {
     expect(res.data.authorization).toBe("Bearer test-token-123");
   });
 
+  it("setHeaders receives the current static headers and applies the returned headers", async () => {
+    const client = createApiClient({
+      baseURL: BASE_URL,
+      defaultHeaders: { "X-Static": "static-value" },
+    });
+    client.setHeaders((current) => ({ "X-Derived": current["X-Static"] ?? "none" }));
+
+    const res = await client.request<Record<string, string>>({ method: "GET", url: "/echo-headers" });
+
+    expect(res.data["x-static"]).toBe("static-value");
+    expect(res.data["x-derived"]).toBe("static-value");
+  });
+
   it("supports an async getAuthToken", async () => {
     const client = createApiClient({
       baseURL: BASE_URL,

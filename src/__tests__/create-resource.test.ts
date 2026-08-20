@@ -115,3 +115,26 @@ describe("createResource - CRUD", () => {
     await expect(posts.getById("1")).rejects.toMatchObject({ statusCode: 404 });
   });
 });
+
+describe("createResource - custom requests", () => {
+  it("custom sends per-request options headers", async () => {
+    const client = createApiClient({ baseURL: BASE_URL });
+    const resource = createResource<Post, CreatePostInput, UpdatePostInput>(client, { baseURL: "" });
+
+    const headers = await resource.custom<Record<string, string>>("GET", "/echo-headers", {
+      options: { headers: { "X-Custom-Option": "option-value" } },
+    });
+
+    expect(headers["x-custom-option"]).toBe("option-value");
+  });
+
+  it("setHeaders applies resource-level headers to every request", async () => {
+    const client = createApiClient({ baseURL: BASE_URL });
+    const resource = createResource<Post, CreatePostInput, UpdatePostInput>(client, { baseURL: "" });
+    resource.setHeaders(() => ({ "X-Resource-Header": "resource-value" }));
+
+    const headers = await resource.custom<Record<string, string>>("GET", "/echo-headers");
+
+    expect(headers["x-resource-header"]).toBe("resource-value");
+  });
+});

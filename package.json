@@ -66,10 +66,11 @@
     "release": "npm run pre-build && changeset publish"
   },
   "dependencies": {
-    "zod": "^4.4.3"
+    "client-api-types": "^0.0.2"
   },
   "peerDependencies": {
     "@tanstack/react-query": "^5.0.0",
+    "@tanstack/react-query-devtools": "^5.0.0",
     "axios": "^1.7.0",
     "react": "^18 || ^19"
   },
@@ -79,23 +80,31 @@
     },
     "@tanstack/react-query": {
       "optional": true
+    },
+    "@tanstack/react-query-devtools": {
+      "optional": true
     }
   },
   "devDependencies": {
-    "@changesets/changelog-github": "^0.7.0",
-    "@changesets/cli": "^2.31.1",
-    "@tanstack/react-query": "5.101.2",
+    "@changesets/changelog-github": "^1.0.0",
+    "@changesets/cli": "^3.0.1",
+    "@tanstack/react-query": "5.101.4",
+    "@tanstack/react-query-devtools": "^5.101.4",
     "@testing-library/react": "16.3.2",
-    "@types/node": "22.15.0",
-    "@types/react": "19.2.17",
-    "axios": "1.18.1",
-    "client-api-types": "^0.0.1",
-    "jsdom": "29.1.1",
+    "@types/node": "26.2.0",
+    "@types/react": "19.2.18",
+    "axios": "1.19.0",
+    "jsdom": "30.0.1",
     "msw": "2.15.0",
-    "react": "19.2.7",
-    "react-dom": "19.2.7",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
     "tsup": "8.5.1",
-    "typescript": "5.9.3",
-    "vitest": "4.1.10"
+    "typescript": "^5.9.3",
+    "vitest": "4.1.11"
+  },
+  "allowScripts": {
+    "esbuild@0.27.7": true,
+    "fsevents@2.3.3": true,
+    "msw@2.15.0": true
   }
 }

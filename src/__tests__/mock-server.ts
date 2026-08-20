@@ -146,6 +146,15 @@ export const handlers = [
     return HttpResponse.json(successEnvelope({ authorization: auth }));
   }),
 
+  // Echoes back the request headers it received - for testing header merging
+  http.get(`${BASE_URL}/echo-headers`, ({ request }) => {
+    const headers: Record<string, string> = {};
+    request.headers.forEach((value, key) => {
+      headers[key] = value;
+    });
+    return HttpResponse.json(successEnvelope(headers));
+  }),
+
   // Always network-errors, for testing the network-error path
   http.get(`${BASE_URL}/unreachable`, () => {
     return HttpResponse.error();

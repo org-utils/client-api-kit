@@ -1,44 +1,35 @@
-import axios, { type AxiosInstance, type AxiosRequestConfig, isAxiosError, RawAxiosRequestHeaders } from "axios";
-import type { ApiClientConfig,ApiResponse, SuccessResponse  } from "client-api-types";
+import axios, { type AxiosRequestConfig, isAxiosError, RawAxiosRequestHeaders } from "axios";
+import type { ApiClient, ApiClientConfig, ApiResponse, SuccessResponse } from "client-api-types";
 import { ApiClientError } from "../errors/ApiClientError.js";
 import { withRetry } from "./retry.js";
+import { normalizeHeaders } from "../utils/index.js";
+/** A value that may be produced synchronously or asynchronously. */
 type MaybePromise<T> = T | Promise<T>;
-function normalizeHeaders(
-  headers?: AxiosRequestConfig["headers"],
-): AxiosRequestConfig["headers"] {
-  if (headers instanceof Headers) {
-    return Object.fromEntries(headers.entries());
-  }
-
-  return headers;
-}
-export interface ApiClient {
-  /** The underlying axios instance, for advanced/one-off use not covered by `request`. */
-  readonly axios: AxiosInstance;
-  /**
-   * Performs a request and returns the unwrapped `SuccessResponse<T>` envelope
-   * (so callers can read both `.data` and `.pagination`). Throws `ApiClientError`
-   * for any failure - network, timeout, cancellation, or a server-returned
-   * `ErrorResponse` - so callers only ever need one catch/error branch.
-   */
-  request<T>(config: AxiosRequestConfig): Promise<SuccessResponse<T>>;
-
-  setHeaders(headers: (headers: Record<string, string>) => MaybePromise<Record<string, any> | undefined>): {
-      readonly axios: AxiosInstance;
-      request<T>(config: AxiosRequestConfig): Promise<SuccessResponse<T>>;
-      setHeaders(headers: (headers: Record<string, string>) => MaybePromise<Record<string, any> | undefined>): ApiClient;
-  }
-}
 
 /**
  * Creates a configured API client. Safe to call in any environment (server
  * component, server action, route handler, or client component) - it holds
  * no browser-only state. Typically you create one instance per base URL and
  * share it across `createResource(...)` calls.
+ *
+ * @param config - Client configuration: `baseURL` (required), optional auth
+ *   token provider, default headers, timeout, retry policy, an `onUnauthorized`
+ *   hook, and an escape-hatch `axiosConfig`.
+ * @returns An {@link ApiClient} wrapping a shared axios instance.
+ *
+ * @example
+ * const api = createApiClient({
+ *   baseURL: "https://api.example.com",
+ *   getAuthToken: () => localStorage.getItem("token"),
+ *   retry: { retries: 2 },
+ *   onUnauthorized: () => window.location.assign("/login"),
+ * });
  */
 export function createApiClient(config: ApiClientConfig): ApiClient {
+  /** Supplies per-request dynamic headers, installed via `setHeaders`. */
   let headerGetter: () => MaybePromise<Record<string, any> | undefined> = () => undefined;
-  let staticHeaders: RawAxiosRequestHeaders = normalizeHeaders(config.defaultHeaders || {}) as Record<string, string>;
+  /** Headers configured at client-creation time via `config.defaultHeaders`. */
+  const staticHeaders: RawAxiosRequestHeaders = normalizeHeaders(config.defaultHeaders || {}) as Record<string, string>;
 
   const instance = axios.create({
     baseURL: config.baseURL,
@@ -52,7 +43,7 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
   });
 
   instance.interceptors.request.use(async (requestConfig) => {
-    // 2. Add dynamic headers from headerGetter
+    // Dynamic headers from the header getter (set via setHeaders), then the auth token.
     const dynamicHeaders = await headerGetter?.();
     if (dynamicHeaders) {
       for (const [key, value] of Object.entries(dynamicHeaders)) {
@@ -67,18 +58,21 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
         requestConfig.headers.set("Authorization", `Bearer ${token}`);
       }
     }
-    // 3. Add static headers (override if needed)
-    // for (const [key, value] of Object.entries(staticHeaders)) {
-    //   if (value !== undefined && value !== null) {
-    //     // Only set if not already set by dynamic headers
-    //     if (!requestConfig.headers.has(key)) {
-    //       requestConfig.headers.set(key, value);
-    //     }
-    //   }
-    // }
     return requestConfig;
   });
 
+  /**
+   * Performs a request and returns the unwrapped `SuccessResponse<T>` envelope
+   * (so callers can read both `.data` and `.pagination`). Throws
+   * {@link ApiClientError} for any failure - network, timeout, cancellation,
+   * or a server-returned `ErrorResponse` - so callers only ever need one
+   * catch/error branch.
+   *
+   * @param requestConfig - An axios request config. `method` defaults to
+   *   `"get"`. Envelope-shaped bodies are unwrapped; bare JSON payloads from
+   *   third-party APIs are synthesized into a `SuccessResponse` automatically.
+   * @returns The unwrapped success envelope for the response body.
+   */
   async function request<T>(requestConfig: AxiosRequestConfig): Promise<SuccessResponse<T>> {
     const method = requestConfig.method ?? "get";
 
@@ -99,11 +93,21 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
       throw ApiClientError.unknown(error);
     }
   }
-  // ✅ Set the header getter function
+
+  /**
+   * Sets a function that supplies per-request headers. The callback receives
+   * the current static headers (from `defaultHeaders`) and may return new
+   * headers, which take precedence over the static ones. Calling `setHeaders`
+   * again replaces the previous getter.
+   *
+   * @param headers - A function receiving the current static headers and
+   *   returning (possibly async) the headers to add for every request.
+   * @returns This same client, so calls can be chained.
+   */
   function setHeaders(
     headers: (headers: Record<string, string>) => MaybePromise<Record<string, any> | undefined>
   ): ApiClient {
-    headerGetter = () => headers({});
+    headerGetter = () => headers({ ...staticHeaders } as Record<string, string>);
     return { axios: instance, request, setHeaders };
   }
 
@@ -133,6 +137,14 @@ function coerceToSuccessResponse<T>(raw: unknown, status: number): SuccessRespon
   };
 }
 
+/**
+ * Type guard for the `api-response`-style envelope shape: a plain object with
+ * a boolean `success` property. Anything else (arrays, primitives, plain
+ * JSON objects without `success`) is treated as a bare payload.
+ *
+ * @param data - The raw response body.
+ * @returns `true` when `data` looks like an envelope.
+ */
 function isEnvelopeShape<T>(data: unknown): data is ApiResponse<T> {
   return typeof data === "object" && data !== null && "success" in data && typeof (data as { success: unknown }).success === "boolean";
 }

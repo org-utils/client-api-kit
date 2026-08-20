@@ -1,7 +1,8 @@
 # client-api-kit
 
 A generic, type-safe API client built on **axios**, paired with
-[`api-response`](../api-response)'s response envelope. Ships two
+[`client-api-types`](https://www.npmjs.com/package/client-api-types)'s
+response envelope. Ships two
 things:
 
 - **Core** (`client-api-kit`) - a framework-agnostic HTTP client and
@@ -16,14 +17,12 @@ One resource definition, two ways to consume it.
 ```bash
 npm install client-api-kit axios
 npm install client-api-kit/react @tanstack/react-query react   # only if you use the hooks layer
+npm install -D @tanstack/react-query-devtools                 # optional, for the devtools overlay
 ```
 
-> **Local install note:** `client-api-kit` depends on `api-response`
-> (`^1.0.0`). Until you've published `api-response` to your registry,
-> install it from the tarball vendored in `vendor/api-response-1.0.0.tgz`:
-> `npm install ./vendor/api-response-1.0.0.tgz` (or `npm link` it from
-> the sibling package). Once published, the normal semver range resolves it
-> automatically.
+> **Note:** `client-api-kit` depends on `client-api-types` (^0.0.2), a
+> types-only package published to npm - it resolves automatically with a
+> normal `npm install`.
 
 ## Why a split core/react package
 
@@ -125,6 +124,33 @@ export function Providers({ children }: { children: React.ReactNode }) {
 }
 ```
 
+### React Query Devtools
+
+`ApiQueryProvider` accepts an `enableDevtools` flag - when on, it renders the
+[`ReactQueryDevtools`](https://tanstack.com/query/latest/docs/framework/react/devtools)
+overlay. `@tanstack/react-query-devtools` is an optional peer dependency and is
+lazily imported, so it's never bundled into consumers that don't enable it:
+
+```tsx
+// app/providers.tsx
+"use client";
+import { ApiQueryProvider } from "client-api-kit/react";
+
+export function Providers({ children }: { children: React.ReactNode }) {
+  return (
+    <ApiQueryProvider enableDevtools devtoolsProps={{ position: "bottom" }}>
+      {children}
+    </ApiQueryProvider>
+  );
+}
+```
+
+`devtoolsProps` forwards any
+[`ReactQueryDevtools` props](https://tanstack.com/query/latest/docs/framework/react/devtools)
+(e.g. `position`, `initialIsOpen` - anything you set overrides the built-in
+`initialIsOpen: false` default). Install the devtools package when you want
+the overlay: `npm install -D @tanstack/react-query-devtools`
+
 ```tsx
 // components/UserList.tsx
 "use client";
@@ -170,7 +196,7 @@ const client = createApiClient({
 });
 ```
 
-- **Envelope-aware**: expects an `api-response`-shaped `{ success, data, ... }`
+- **Envelope-aware**: expects a `client-api-types`-shaped `{ success, data, ... }`
   body and unwraps it into `SuccessResponse<T>` (so you get `.data` *and*
   `.pagination` from one call). A bare, un-enveloped JSON body from a
   third-party API is still handled - it's synthesized into a `SuccessResponse`
@@ -236,7 +262,7 @@ if (error?.code === "NOT_FOUND") return <NotFoundPage />;
 
 ## Pagination
 
-Both styles from `api-response` are supported end-to-end.
+Both styles from `client-api-types` are supported end-to-end.
 
 ### Offset
 
@@ -317,7 +343,7 @@ network/5xx errors up to twice, mutations never auto-retry.
 
 | Module | Contents |
 |---|---|
-| `client-api-kit` | `createApiClient`, `createResource`, `createQueryKeys`, `ApiClientError`, all pagination/response types re-exported from `api-response` |
+| `client-api-kit` | `createApiClient`, `createResource`, `createQueryKeys`, `ApiClientError`, all pagination/response types re-exported from `client-api-types` |
 | `client-api-kit/react` | `createResourceHooks`, `createQueryClient`, `ApiQueryProvider` |
 
 ## Development
@@ -325,7 +351,7 @@ network/5xx errors up to twice, mutations never auto-retry.
 ```bash
 npm install
 npm run typecheck
-npm test        # 33 tests: client, resources (offset + cursor), full hooks layer against a mock HTTP server
+npm test        # 38 tests: client, resources (offset + cursor), provider, full hooks layer against a mock HTTP server
 npm run build   # tsup -> dist/ (ESM + CJS + .d.ts), "use client" applied to the react entry only
 ```
 

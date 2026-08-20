@@ -25,11 +25,15 @@ jobs:
 
       - run: npm ci
 
+      - run: npm run typecheck
+
+      - run: npm test
+
       - run: npm run build
 
       - uses: changesets/action@v1
         with:
-          version: npm run  version
+          version: npm run version
           publish: npm run publish
         env:
           GITHUB_TOKEN: ${{ secrets.TOKEN_GITHUB }}
