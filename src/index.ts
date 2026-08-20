@@ -14,6 +14,12 @@ export type { ApiClientErrorKind } from "./errors/ApiClientError.js";
 
 // Resource layer
 export { createResource } from "./resource/create-resource.js";
+export type {
+  ResourceResult,
+  ResourceErrorMode,
+  ResourceParsers,
+  SafeResourceClient,
+} from "./resource/create-resource.js";
 export { createQueryKeys } from "./resource/query-keys.js";
 export type { QueryKeyFactory } from "./resource/query-keys.js";
 export type { CreateResourceOptions, ListResult, ResourceClient } from "client-api-types";
