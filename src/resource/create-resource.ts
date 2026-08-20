@@ -2,6 +2,7 @@ import { RawAxiosRequestHeaders, type AxiosRequestConfig } from "axios";
 
 import type { ApiClient, ListResult, ResourceClient } from "client-api-types/client";
 import type { RequestOptions, SuccessResponse } from "client-api-types";
+import { ApiClientError } from "../errors/ApiClientError.js";
 import { isDefined, normalizeHeaders, safeNormalizeUrl } from "../utils/index.js";
 
 /** Pagination metadata used when the server returns a list without any. */
@@ -18,10 +19,120 @@ const EMPTY_OFFSET_PAGINATION = {
 /** Axios-level config allowed on a resource, minus `baseURL` (the path lives in `CreateResourceOptions`). */
 type ResourceConfig = Omit<AxiosRequestConfig, "baseURL">;
 
+/**
+ * How a resource reports failures: `"throw"` rejects with `ApiClientError`
+ * (the default - required by the TanStack Query hooks layer, which only
+ * treats a rejected `queryFn` as an error); `"result"` never throws and
+ * instead returns a typed {@link ResourceResult} union you can narrow with a
+ * single `if (result.success)` check - convenient in server components and
+ * server actions where a try/catch is awkward.
+ */
+export type ResourceErrorMode = "throw" | "result";
+
+/**
+ * The discriminated result every resource method resolves to when the
+ * resource is created with `onError: "result"`. Narrow with `if (result.success)`:
+ *
+ * ```ts
+ * const res = await users.list({ page: 1 });
+ * if (!res.success) return res.error.message; // error: ApiClientError
+ * res.data; // data: ListResult<User>
+ * ```
+ */
+export type ResourceResult<T> =
+  | { success: true; data: T }
+  | { success: false; error: ApiClientError };
+
+/**
+ * Optional runtime validators applied to `response.data` before it's
+ * returned, so the typed generics are backed by real checks at runtime (e.g.
+ * zod schemas). A validator that throws (zod's `parse`) is normalized into
+ * an `ApiClientError` with `kind: "unknown"` and the original error as its
+ * cause - thrown or returned per the resource's `onError` mode.
+ */
+export type ResourceParsers<T> = {
+  /** Validates list items before they're wrapped in `ListResult`. */
+  list?: (data: unknown) => T[];
+  /** Validates a single record fetched by id. */
+  getById?: (data: unknown) => T;
+  /** Validates the record returned by `create`. */
+  create?: (data: unknown) => T;
+  /** Validates the record returned by `update`. */
+  update?: (data: unknown) => T;
+};
+
 /** Options accepted by `createResource`: the resource path plus any extra axios config. */
-type CreateResourceOptions = AxiosRequestConfig & {
+type CreateResourceOptions<Mode extends ResourceErrorMode = "throw", T = unknown> = AxiosRequestConfig & {
   /** Path relative to the client's baseURL, e.g. "/users". */
   baseURL: string;
+  /**
+   * How failures are reported. `"throw"` (default) rejects with
+   * `ApiClientError`; `"result"` returns a typed {@link ResourceResult} union
+   * instead of throwing. Use `"throw"` with the hooks layer
+   * (`createResourceHooks` needs rejected promises); `"result"` is convenient
+   * for server components/server actions.
+   */
+  onError?: Mode;
+  /** Optional runtime validators (e.g. zod schemas) for response payloads. */
+  parse?: ResourceParsers<T>;
+};
+
+/** The resource contract when `onError: "result"` - every method returns a {@link ResourceResult} instead of throwing. */
+export interface SafeResourceClient<
+  T,
+  ListParams extends object = Record<string, unknown>,
+  CreateInput = Partial<T>,
+  UpdateInput = Partial<T>,
+> {
+  list(params?: ListParams, options?: RequestOptions): Promise<ResourceResult<ListResult<T>>>;
+  getById(id: string | number, options?: RequestOptions): Promise<ResourceResult<T>>;
+  create(input: CreateInput, options?: RequestOptions): Promise<ResourceResult<T>>;
+  update(id: string | number, input: UpdateInput, options?: RequestOptions): Promise<ResourceResult<T>>;
+  remove(id: string | number, options?: RequestOptions): Promise<ResourceResult<null>>;
+  custom<R = unknown>(
+    method?: "GET" | "POST" | "PUT" | "DELETE",
+    path?: string,
+    options?: {
+      data?: any;
+      params?: Record<string, any>;
+      options?: RequestOptions;
+      /** Per-call runtime validator for this request's payload. */
+      parse?: (data: unknown) => R;
+    },
+  ): Promise<ResourceResult<R>>;
+  setConfig(
+    newConfig:
+      | Partial<AxiosRequestConfig>
+      | ((currentConfig: AxiosRequestConfig) => Promise<Partial<AxiosRequestConfig>>),
+  ): Promise<SafeResourceClient<T, ListParams, CreateInput, UpdateInput>>;
+  setClient(newClient: ApiClient): SafeResourceClient<T, ListParams, CreateInput, UpdateInput>;
+  setHeaders(
+    headerMethod: () => MaybePromise<Partial<Record<string, any>>> | undefined,
+  ): SafeResourceClient<T, ListParams, CreateInput, UpdateInput>;
+}
+
+/** Picks the resource contract based on the `onError` mode. */
+type ResourceClientByMode<
+  Mode extends ResourceErrorMode,
+  T,
+  ListParams extends object,
+  CreateInput,
+  UpdateInput,
+> = Mode extends "result"
+  ? SafeResourceClient<T, ListParams, CreateInput, UpdateInput>
+  : ResourceClient<T, CreateInput, UpdateInput, ListParams>;
+
+/** Loose internal shape both contracts share - narrowed to the mode's contract on return. */
+type AnyResource = {
+  list: (params?: any, requestOptions?: RequestOptions) => Promise<any>;
+  getById: (id: string | number, requestOptions?: RequestOptions) => Promise<any>;
+  create: (input: any, requestOptions?: RequestOptions) => Promise<any>;
+  update: (id: string | number, input: any, requestOptions?: RequestOptions) => Promise<any>;
+  remove: (id: string | number, requestOptions?: RequestOptions) => Promise<any>;
+  custom: (method?: any, path?: any, options?: any) => Promise<any>;
+  setConfig: (newConfig: any) => Promise<any>;
+  setClient: (newClient: ApiClient) => any;
+  setHeaders: (headerMethod: any) => any;
 };
 
 /** A value that may be produced synchronously or asynchronously. */
@@ -34,16 +145,23 @@ type MaybePromise<T> = T | Promise<T>;
  * Pair it with `createResourceHooks` (from `client-api-kit/react`) to get a
  * TanStack Query hooks layer over the same resource.
  *
- * @typeParam T - The record type this resource manages.
+* @typeParam T - The record type this resource manages.
  * @typeParam ListParams - Query params for `list`, typically offset or cursor
  *   pagination params (optionally with filters). Defaults to `Record<string, unknown>`.
  * @typeParam CreateInput - Payload type for `create`. Defaults to `Partial<T>`.
  * @typeParam UpdateInput - Payload type for `update`. Defaults to `Partial<T>`.
  * @param client - The shared {@link ApiClient} to issue requests through.
  * @param options - `{ baseURL: "/users", ... }` - the resource path plus any
- *   axios request config to apply to every request (e.g. `params`, `headers`).
- * @returns A {@link ResourceClient} with `list`, `getById`, `create`, `update`,
+ *   axios request config to apply to every request (e.g. `params`, `headers`),
+ *   an `onError` mode, and optional `parse` validators.
+ * @returns A {@link ResourceClient} (or {@link SafeResourceClient} when
+ *   `onError: "result"`) with `list`, `getById`, `create`, `update`,
  *   `remove`, `custom`, and runtime configuration setters.
+ *
+ * The return contract is chosen by overloading on the `onError` option:
+ * `"throw"` (the default) returns a {@link ResourceClient} that rejects with
+ * `ApiClientError`; `"result"` returns a {@link SafeResourceClient} whose
+ * methods resolve a typed {@link ResourceResult} instead of throwing.
  *
  * @example
  * const users = createResource<User, OffsetPaginationParams, CreateUserInput, UpdateUserInput>(
@@ -51,6 +169,13 @@ type MaybePromise<T> = T | Promise<T>;
  *   { baseURL: "/users" },
  * );
  * const page = await users.list({ page: 1, limit: 20 });
+ *
+ * @example
+ * // Typed success/error results for server actions - no try/catch needed:
+ * const users = createResource<User>(apiClient, { baseURL: "/users", onError: "result" });
+ * const res = await users.getById("1");
+ * if (!res.success) return res.error.message; // error is ApiClientError
+ * res.data; // data is User
  */
 export function createResource<
   T,
@@ -59,9 +184,28 @@ export function createResource<
   UpdateInput = Partial<T>,
 >(
   client: ApiClient,
-  options: CreateResourceOptions,
-): ResourceClient<T, CreateInput, UpdateInput, ListParams> {
-  const { baseURL: basePath, ...initialConfig } = options;
+  options: CreateResourceOptions<"throw", T>,
+): ResourceClient<T, CreateInput, UpdateInput, ListParams>;
+export function createResource<
+  T,
+  ListParams extends object = Record<string, unknown>,
+  CreateInput = Partial<T>,
+  UpdateInput = Partial<T>,
+>(
+  client: ApiClient,
+  options: CreateResourceOptions<"result" | "throw", T>,
+): SafeResourceClient<T, ListParams, CreateInput, UpdateInput>;
+export function createResource<
+  T,
+  ListParams extends object = Record<string, unknown>,
+  CreateInput = Partial<T>,
+  UpdateInput = Partial<T>,
+  Mode extends ResourceErrorMode = "throw",
+>(
+  client: ApiClient,
+  options: CreateResourceOptions<Mode, T>,
+): ResourceClientByMode<Mode, T, ListParams, CreateInput, UpdateInput> {
+  const { baseURL: basePath, onError = "throw", parse, ...initialConfig } = options;
   /** The client used for requests; replaceable at runtime via `setClient`. */
   let rClient = client;
   /** Base config merged into every request; replaceable via `setConfig`. */
@@ -153,7 +297,41 @@ export function createResource<
     });
   }
 
-  const resource: ResourceClient<T, CreateInput, UpdateInput, ListParams> = {
+  /**
+   * Runs an operation and reports failures per the resource's `onError` mode:
+   * `"throw"` rethrows, `"result"` returns a typed {@link ResourceResult}.
+   *
+   * @param exec - The operation to run (request + validation).
+   * @returns The operation's value, or a result object when in `"result"` mode.
+   */
+  async function settle<R>(exec: () => Promise<R>): Promise<R | ResourceResult<R>> {
+    if (onError === "throw") return exec();
+    try {
+      return { success: true as const, data: await exec() };
+    } catch (cause) {
+      return { success: false as const, error: ApiClientError.unknown(cause) };
+    }
+  }
+
+  /**
+   * Applies an optional runtime validator to a payload. Validator failures
+   * (e.g. a throwing zod `parse`) are normalized into an `ApiClientError`
+   * with `kind: "unknown"` and the original error as its cause.
+   *
+   * @param parser - The validator to run, if any.
+   * @param data - The raw payload from the server.
+   * @returns The validated payload.
+   */
+  function validate<Out>(parser: ((data: unknown) => Out) | undefined, data: unknown): Out {
+    if (!parser) return data as Out;
+    try {
+      return parser(data);
+    } catch (cause) {
+      throw ApiClientError.unknown(cause);
+    }
+  }
+
+  const resource: AnyResource = {
     /**
      * Fetches a paginated list of records.
      *
@@ -161,18 +339,20 @@ export function createResource<
      * @param requestOptions - Per-call headers and/or an abort signal.
      * @returns The list items plus their pagination metadata.
      */
-    async list(params, requestOptions): Promise<ListResult<T>> {
-      const response = await execute<T[]>({
-        method: "GET",
-        url: basePath,
-        params,
-        ...toAxiosOptions(requestOptions),
-      });
+    async list(params, requestOptions) {
+      return settle(async () => {
+        const response = await execute<T[]>({
+          method: "GET",
+          url: basePath,
+          params,
+          ...toAxiosOptions(requestOptions),
+        });
 
-      return {
-        items: response.data,
-        pagination: response.pagination ?? EMPTY_OFFSET_PAGINATION,
-      };
+        return {
+          items: validate(parse?.list, response.data),
+          pagination: response.pagination ?? EMPTY_OFFSET_PAGINATION,
+        };
+      });
     },
 
     /**
@@ -183,14 +363,16 @@ export function createResource<
      * @param requestOptions - Per-call headers and/or an abort signal.
      * @returns The record.
      */
-    async getById(id, requestOptions): Promise<T> {
-      const response = await execute<T>({
-        method: "GET",
-        url: `${basePath}${isDefined(id) ? `/${encodeURIComponent(String(id))}` : ""}`,
-        ...toAxiosOptions(requestOptions),
-      });
+    async getById(id, requestOptions) {
+      return settle(async () => {
+        const response = await execute<T>({
+          method: "GET",
+          url: `${basePath}${isDefined(id) ? `/${encodeURIComponent(String(id))}` : ""}`,
+          ...toAxiosOptions(requestOptions),
+        });
 
-      return response.data;
+        return validate(parse?.getById, response.data);
+      });
     },
 
     /**
@@ -200,15 +382,17 @@ export function createResource<
      * @param requestOptions - Per-call headers and/or an abort signal.
      * @returns The created record as returned by the server.
      */
-    async create(input, requestOptions): Promise<T> {
-      const response = await execute<T>({
-        method: "POST",
-        url: basePath,
-        data: input,
-        ...toAxiosOptions(requestOptions),
-      });
+    async create(input, requestOptions) {
+      return settle(async () => {
+        const response = await execute<T>({
+          method: "POST",
+          url: basePath,
+          data: input,
+          ...toAxiosOptions(requestOptions),
+        });
 
-      return response.data;
+        return validate(parse?.create, response.data);
+      });
     },
 
     /**
@@ -219,15 +403,17 @@ export function createResource<
      * @param requestOptions - Per-call headers and/or an abort signal.
      * @returns The updated record as returned by the server.
      */
-    async update(id, input, requestOptions): Promise<T> {
-      const response = await execute<T>({
-        method: "PATCH",
-        url: `${basePath}${isDefined(id) ? `/${encodeURIComponent(String(id))}` : ""}`,
-        data: input,
-        ...toAxiosOptions(requestOptions),
-      });
+    async update(id, input, requestOptions) {
+      return settle(async () => {
+        const response = await execute<T>({
+          method: "PATCH",
+          url: `${basePath}${isDefined(id) ? `/${encodeURIComponent(String(id))}` : ""}`,
+          data: input,
+          ...toAxiosOptions(requestOptions),
+        });
 
-      return response.data;
+        return validate(parse?.update, response.data);
+      });
     },
 
     /**
@@ -237,11 +423,15 @@ export function createResource<
      * @param requestOptions - Per-call headers and/or an abort signal.
      * @returns Resolves once the server confirms deletion.
      */
-    async remove(id, requestOptions): Promise<void> {
-      await execute({
-        method: "DELETE",
-        url: `${basePath}${isDefined(id) ? `/${encodeURIComponent(String(id))}` : ""}`,
-        ...toAxiosOptions(requestOptions),
+    async remove(id, requestOptions) {
+      return settle(async () => {
+        await execute({
+          method: "DELETE",
+          url: `${basePath}${isDefined(id) ? `/${encodeURIComponent(String(id))}` : ""}`,
+          ...toAxiosOptions(requestOptions),
+        });
+
+        return null;
       });
     },
 
@@ -253,7 +443,8 @@ export function createResource<
      * @param method - HTTP method. Defaults to `"GET"`.
      * @param path - Path appended to the base path (normalized: leading slash
      *   added, double slashes collapsed). Defaults to the base path itself.
-     * @param options - Request body, query params, and per-call headers/signal.
+     * @param options - Request body, query params, per-call headers/signal,
+     *   and an optional per-call runtime validator for the payload.
      * @returns The raw response payload.
      *
      * @example
@@ -266,19 +457,23 @@ export function createResource<
         data?: any;
         params?: Record<string, any>;
         options?: RequestOptions;
+        /** Per-call runtime validator for this request's payload. */
+        parse?: (data: unknown) => R;
       },
-    ): Promise<R> {
-      const { data, params, options: requestOptions } = options ?? {};
+    ) {
+      const { data, params, options: requestOptions, parse: parseCustom } = options ?? {};
 
-      const response = await execute<R>({
-        method,
-        url: `${basePath}${safeNormalizeUrl(path)}`,
-        data,
-        params,
-        ...toAxiosOptions(requestOptions),
+      return settle(async () => {
+        const response = await execute<R>({
+          method,
+          url: `${basePath}${safeNormalizeUrl(path)}`,
+          data,
+          params,
+          ...toAxiosOptions(requestOptions),
+        });
+
+        return validate(parseCustom, response.data);
       });
-
-      return response.data;
     },
 
     /**
@@ -348,7 +543,7 @@ export function createResource<
     },
   };
 
-  return resource;
+  return resource as ResourceClientByMode<Mode, T, ListParams, CreateInput, UpdateInput>;
 }
 
 /**

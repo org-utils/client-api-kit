@@ -357,6 +357,66 @@ const { error } = userHooks.useGetById(id);
 if (error?.code === "NOT_FOUND") return <NotFoundPage />;
 ```
 
+## Typed results instead of thrown errors (`onError: "result"`)
+
+Resource methods throw by default. In server components and server actions a
+`try/catch` around every call is noisy - pass `onError: "result"` to
+`createResource` and every method returns a typed
+`{ success: true; data } | { success: false; error }` union instead of
+throwing:
+
+```ts
+import { createResource } from "client-api-kit";
+
+const users = createResource<User>(apiClient, {
+  baseURL: "/users",
+  onError: "result", // methods resolve ResourceResult<T> - they never throw
+});
+
+export async function updateName(id: string, name: string) {
+  const res = await users.update(id, { name });
+  if (!res.success) return res.error.message; // error: ApiClientError
+  return res.data; // data: User
+}
+```
+
+Narrow with a single `if (result.success)` check - `data` is fully typed in
+the success branch, `error` is an `ApiClientError` (`kind`, `statusCode`,
+`code`, `details`) in the failure branch. `list` resolves
+`ResourceResult<ListResult<T>>`, `remove` resolves
+`ResourceResult<null>`.
+
+Note: the TanStack Query hooks layer (`createResourceHooks`) needs rejected
+promises to set `isError`, so hook-wrapped resources must stay in the
+default `"throw"` mode.
+
+## Runtime validation (`parse`)
+
+The generics are compile-time only. To validate what the server actually
+returns at runtime, pass `parse` validators - one per method - applied to
+`response.data` before it's returned. Plain functions or zod schemas work:
+
+```ts
+import { createResource } from "client-api-kit";
+import { z } from "zod";
+
+const userSchema = z.object({ id: z.string(), name: z.string() });
+
+const users = createResource<User>(apiClient, {
+  baseURL: "/users",
+  parse: {
+    getById: (data) => userSchema.parse(data), // throws ZodError on mismatch
+    list: (data) => z.array(userSchema).parse(data),
+  },
+});
+```
+
+A validator that throws (zod's `parse` does) is normalized into an
+`ApiClientError` with `kind: "unknown"` and the original error as its cause
+- it rejects in `"throw"` mode or lands in the `error` branch in
+`"result"` mode, exactly like any other failure. `custom()` takes its own
+per-call `parse` (its payload type `R` varies per call).
+
 ## Pagination
 
 Both styles from `client-api-types` are supported end-to-end.
@@ -444,7 +504,7 @@ network/5xx errors up to twice, mutations never auto-retry.
 
 | Module | Contents |
 |---|---|
-| `client-api-kit` | `createApiClient`, `createResource`, `createQueryKeys`, `ApiClientError`, all pagination/response types re-exported from `client-api-types` |
+| `client-api-kit` | `createApiClient`, `createResource`, `createQueryKeys`, `ApiClientError`, `ResourceResult`/`SafeResourceClient`/`ResourceParsers` types, all pagination/response types re-exported from `client-api-types` |
 | `client-api-kit/react` | `createResourceHooks`, `createQueryClient`, `ApiQueryProvider` |
 | `client-api-kit/server` | `createResourcePrefetcher`, `createQueryClient` |
 
@@ -453,7 +513,7 @@ network/5xx errors up to twice, mutations never auto-retry.
 ```bash
 npm install
 npm run typecheck
-npm test        # 46 tests: client, resources (offset + cursor), provider, hooks layer, prefetch + hydration against a mock HTTP server
+npm test        # 58 tests: client, resources (offset + cursor), typed results + validation, provider, hooks layer, prefetch + hydration against a mock HTTP server
 npm run build   # tsup -> dist/ (ESM + CJS + .d.ts), "use client" applied to the react entry only
 ```
 
