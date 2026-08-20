@@ -138,7 +138,7 @@ export interface ResourcePrefetcher<T, ListParams extends object> {
  * @typeParam CreateInput - Payload type for `create`.
  * @typeParam UpdateInput - Payload type for `update`.
  * @param resource - The resource created with `createResource(...)`. Works in
- *   any mode (`"query"` default, `"result"`, or `"throw"`): the payload is
+ *   any mode (`"throw"` default, `"result"`, or `"query"`): the payload is
  *   extracted from the mode's result shape internally. Use the same instance
  *   and `resourceName` as the one passed to `createResourceHooks` so the
  *   query keys line up.

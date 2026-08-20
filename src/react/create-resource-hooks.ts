@@ -10,12 +10,8 @@ import {
   type UseMutationOptions,
   type UseQueryOptions,
 } from "@tanstack/react-query";
-import type { ListResult } from "client-api-types/client";
+import type { ListResult, ResourceClient } from "client-api-types/client";
 import type { ApiClientError } from "../errors/ApiClientError.js";
-import {
-  unwrapResourceResult,
-  type AnyResourceClient,
-} from "../resource/create-resource.js";
 import { createQueryKeys, type QueryKeyFactory } from "../resource/query-keys.js";
 import { isCursorPagination } from "../utils/index.js";
 
@@ -124,9 +120,9 @@ export interface ResourceHooks<
  * @typeParam ListParams - List params shape. Defaults to `Record<string, unknown>`.
  * @typeParam CreateInput - Payload type for `create`. Defaults to `Partial<T>`.
  * @typeParam UpdateInput - Payload type for `update`. Defaults to `Partial<T>`.
- * @param resource - The resource created with `createResource(...)`, in any
- *   mode (`"query"` default, `"result"`, or `"throw"`) - the payload is
- *   extracted from the mode's result shape internally.
+ * @param resource - The resource created with `createResource(...)` - the
+ *   default `"throw"` mode rejects with `ApiClientError`, which is what
+ *   TanStack Query needs to set `isError`.
  * @param resourceName - Stable, unique name used for the query keys, e.g. `"users"`.
  * @returns The {@link ResourceHooks} object with `useList`, `useInfiniteList`,
  *   `useGetById`, `useCreate`, `useUpdate`, `useDelete`, and `queryKeys`.
@@ -146,7 +142,7 @@ export function createResourceHooks<
   CreateInput = Partial<T>,
   UpdateInput = Partial<T>,
 >(
-  resource: AnyResourceClient<T, ListParams, CreateInput, UpdateInput>,
+  resource: ResourceClient<T, CreateInput, UpdateInput, ListParams>,
   resourceName: string,
 ): ResourceHooks<T, ListParams, CreateInput, UpdateInput> {
   const queryKeys = createQueryKeys<ListParams>(resourceName);
@@ -160,7 +156,7 @@ export function createResourceHooks<
       placeholderData: keepPreviousData,
       ...options,
       queryKey: queryKeys.list(params),
-      queryFn: async ({ signal }) => unwrapResourceResult(await resource.list(params, { signal })),
+      queryFn: async ({ signal }) => resource.list(params, { signal }),
     });
   }
 
@@ -176,7 +172,7 @@ export function createResourceHooks<
       ...options,
       queryKey: queryKeys.infinite(params),
       queryFn: async ({ pageParam, signal }) =>
-        unwrapResourceResult(await resource.list({ ...(params as ListParams), cursor: pageParam }, { signal })),
+        resource.list({ ...(params as ListParams), cursor: pageParam }, { signal }),
       initialPageParam: undefined,
       getNextPageParam: (lastPage) =>
         isCursorPagination(lastPage.pagination) ? (lastPage.pagination.nextCursor ?? undefined) : undefined,
@@ -193,7 +189,7 @@ export function createResourceHooks<
     return useQuery({
       ...options,
       queryKey: queryKeys.detail(id ?? ""),
-      queryFn: async ({ signal }) => unwrapResourceResult(await resource.getById(id as string | number, { signal })),
+      queryFn: async ({ signal }) => resource.getById(id as string | number, { signal }),
       enabled: (options?.enabled ?? true) && id !== undefined && id !== null,
     });
   }
@@ -203,7 +199,7 @@ export function createResourceHooks<
     const queryClient = useQueryClient();
     return useMutation({
       ...options,
-      mutationFn: async (input: CreateInput) => unwrapResourceResult(await resource.create(input)),
+      mutationFn: async (input: CreateInput) => resource.create(input),
       onSuccess: (data, variables, onMutateResult, context) => {
         void queryClient.invalidateQueries({ queryKey: queryKeys.lists() });
         void queryClient.invalidateQueries({ queryKey: queryKeys.infiniteLists() });
@@ -218,7 +214,7 @@ export function createResourceHooks<
     return useMutation({
       ...options,
       mutationFn: async ({ id, input }: { id: string | number; input: UpdateInput }) =>
-        unwrapResourceResult(await resource.update(id, input)),
+        resource.update(id, input),
       onSuccess: (data, variables, onMutateResult, context) => {
         void queryClient.invalidateQueries({ queryKey: queryKeys.lists() });
         void queryClient.invalidateQueries({ queryKey: queryKeys.infiniteLists() });
@@ -234,7 +230,7 @@ export function createResourceHooks<
     return useMutation({
       ...options,
       mutationFn: async (id: string | number) => {
-        await unwrapResourceResult(await resource.remove(id));
+        await resource.remove(id);
       },
       onSuccess: (data, id, onMutateResult, context) => {
         void queryClient.invalidateQueries({ queryKey: queryKeys.lists() });

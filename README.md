@@ -362,17 +362,19 @@ const { error } = userHooks.useGetById(id);
 if (error?.code === "NOT_FOUND") return <NotFoundPage />;
 ```
 
-## Modes: `"query"`, `"result"`, `"throw"`
+## Modes: `"throw"`, `"result"`, `"query"`
 
-The `mode` option (default `"query"`) controls what each method resolves
-to - so a `try/catch` is never forced on you in server components, server
-actions, or route handlers:
+Resource methods reject with `ApiClientError` by default. The `mode` option
+changes how each method reports its outcome - useful when a `try/catch`
+around every call is noisy (server components, server actions, route
+handlers). The default `"throw"` mode is what the hooks layer
+(`createResourceHooks`) expects, so a resource can be passed straight in:
 
 | `mode` | Method return type | On failure |
 |---|---|---|
-| `"query"` (default) | `Promise<QueryResult<T>>` | TanStack Query-shaped `{ data, error, isError, ... }` - never throws |
+| `"throw"` (default) | `Promise<T>` | Rejects with `ApiClientError` - required by the hooks layer |
 | `"result"` | `Promise<ResourceResult<T>>` | `{ success: false; error: ApiClientError }` - never throws |
-| `"throw"` | `Promise<T>` | Rejects with `ApiClientError` |
+| `"query"` | `Promise<QueryResult<T>>` | TanStack Query-shaped `{ data, error, isError, ... }` - never throws |
 
 `mode: "result"` - every method returns a typed
 `{ success: true; data } | { success: false; error }` union:
@@ -397,23 +399,22 @@ the success branch, `error` is an `ApiClientError` (`kind`, `statusCode`,
 `code`, `details`) in the failure branch. `list` resolves
 `ResourceResult<ListResult<T>>`, `remove` resolves `ResourceResult<null>`.
 
-## Query-style results (`mode: "query"` - the default)
+## Query-style results (`mode: "query"`)
 
-Every method resolves a settled, **TanStack Query-shaped** object - the same
-field names the hooks return (`data`, `error`, `isError`, `isSuccess`,
-`isLoading`, `isPending`, `isFetching`) - but type-safe: `status` is a strict
-discriminant and the boolean flags are literal types, so the compiler knows
-`data` exists exactly when `isSuccess`, and `error` exactly when `isError`.
-No `data: T | undefined` looseness, no manual assertions. No `mode` option is
-needed - this is the default:
+`mode: "query"` makes every method resolve a settled, **TanStack Query-shaped**
+object - the same field names the hooks return (`data`, `error`, `isError`,
+`isSuccess`, `isLoading`, `isPending`, `isFetching`) - but type-safe: `status`
+is a strict discriminant and the boolean flags are literal types, so the
+compiler knows `data` exists exactly when `isSuccess`, and `error` exactly
+when `isError`. No `data: T | undefined` looseness, no manual assertions:
 
 ```ts
-// lib/api/products.ts - one resource definition, used everywhere
+// lib/api/products.ts
 import { createResource, type OffsetPaginationParams } from "client-api-kit";
 
 export const productResource = createResource<Product, OffsetPaginationParams>(apiClient, {
   baseURL: "/api/v1/products",
-  // mode defaults to "query"
+  mode: "query",
 });
 ```
 
@@ -454,7 +455,7 @@ call site gets the precise contract. The switch is global - every handle
 created from the resource (including ones captured earlier) sees it.
 
 ```ts
-const users = createResource<User>(apiClient, { baseURL: "/users" }); // "query"
+const users = createResource<User>(apiClient, { baseURL: "/users" }); // "throw"
 
 const safe = users.setMode("result"); // SafeResourceClient<User>
 const res = await safe.update(id, { name });
@@ -463,23 +464,23 @@ if (!res.success) return res.error.message; // error: ApiClientError
 users.setMode("throw"); // rejects with ApiClientError again
 ```
 
-## Hooks and prefetching work in any mode
+## Hooks need the default `"throw"` mode - prefetching works in any mode
 
-`createResourceHooks` and `createResourcePrefetcher` are mode-agnostic: they
-extract the payload (or throw the `ApiClientError`) from whatever result
-shape the resource is in via `unwrapResourceResult`, so the same resource
-definition works for server components, server actions, and client hooks
-without a second instance.
+`createResourceHooks` expects the resource in the default `"throw"` mode:
+the hooks layer relies on rejected promises to set `isError`, so pass the
+resource straight in - no second instance. `createResourcePrefetcher` is
+mode-agnostic: it extracts the payload (or throws the `ApiClientError`) from
+whatever result shape the resource is in via `unwrapResourceResult`.
 
 ```ts
-export const productResource = createResource<Product>(apiClient, { baseURL: "/api/v1/products" });
+export const productResource = createResource<Product>(apiClient, { baseURL: "/api/v1/products" }); // "throw"
 
 // client components - TanStack Query cache, invalidation, prefetching
 export const productHooks = createResourceHooks(productResource, "products");
 export const productPrefetcher = createResourcePrefetcher(productResource, "products");
 
-// server components / actions - the same resource, query-shaped results
-const res = await productResource.getById(id);
+// server components / actions - switch to query-shaped results for the same resource
+const res = await productResource.setMode("query").getById(id);
 ```
 
 ## Runtime validation (`parse`)

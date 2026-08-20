@@ -178,14 +178,13 @@ describe("createResource - mode: 'query'", () => {
 describe("createResource - default mode and setMode", () => {
   beforeEach(() => resetPosts());
 
-  it("defaults to mode 'query' (TanStack Query-shaped results)", async () => {
+  it("defaults to mode 'throw' (rejects with ApiClientError)", async () => {
     const client = createApiClient({ baseURL: BASE_URL });
     const posts = createResource<Post>(client, { baseURL: "/posts" });
 
-    const result = await posts.getById("1");
-    expect(result.status).toBe("success");
-    if (result.isError) return;
-    expect(result.data.title).toBe("Post 1");
+    const post = await posts.getById("1");
+    expect(post.id).toBe("1");
+    await expect(posts.getById("does-not-exist")).rejects.toMatchObject({ statusCode: 404 });
   });
 
   it("setMode('result') returns the resource typed for the new mode and switches behavior", async () => {
