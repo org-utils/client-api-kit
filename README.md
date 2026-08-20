@@ -357,20 +357,27 @@ const { error } = userHooks.useGetById(id);
 if (error?.code === "NOT_FOUND") return <NotFoundPage />;
 ```
 
-## Typed results instead of thrown errors (`onError: "result"`)
+## Modes: `"throw"`, `"result"`, `"query"`
 
-Resource methods throw by default. In server components and server actions a
-`try/catch` around every call is noisy - pass `onError: "result"` to
-`createResource` and every method returns a typed
-`{ success: true; data } | { success: false; error }` union instead of
-throwing:
+Resource methods throw by default. The `mode` option changes how each method
+reports its outcome - useful when a `try/catch` around every call is noisy
+(server components, server actions, route handlers):
+
+| `mode` | Method return type | On failure |
+|---|---|---|
+| `"throw"` (default) | `Promise<T>` | Rejects with `ApiClientError` - required by the hooks layer |
+| `"result"` | `Promise<ResourceResult<T>>` | `{ success: false; error: ApiClientError }` - never throws |
+| `"query"` | `Promise<QueryResult<T>>` | TanStack Query-shaped `{ data, error, isError, ... }` - never throws |
+
+`mode: "result"` - every method returns a typed
+`{ success: true; data } | { success: false; error }` union:
 
 ```ts
 import { createResource } from "client-api-kit";
 
 const users = createResource<User>(apiClient, {
   baseURL: "/users",
-  onError: "result", // methods resolve ResourceResult<T> - they never throw
+  mode: "result", // methods resolve ResourceResult<T> - they never throw
 });
 
 export async function updateName(id: string, name: string) {
@@ -383,8 +390,55 @@ export async function updateName(id: string, name: string) {
 Narrow with a single `if (result.success)` check - `data` is fully typed in
 the success branch, `error` is an `ApiClientError` (`kind`, `statusCode`,
 `code`, `details`) in the failure branch. `list` resolves
-`ResourceResult<ListResult<T>>`, `remove` resolves
-`ResourceResult<null>`.
+`ResourceResult<ListResult<T>>`, `remove` resolves `ResourceResult<null>`.
+
+## Query-style results (`mode: "query"`)
+
+`mode: "query"` makes every method resolve a settled, **TanStack Query-shaped**
+object - the same field names the hooks return (`data`, `error`, `isError`,
+`isSuccess`, `isLoading`, `isPending`, `isFetching`) - but type-safe: `status`
+is a strict discriminant and the boolean flags are literal types, so the
+compiler knows `data` exists exactly when `isSuccess`, and `error` exactly
+when `isError`. No `data: T | undefined` looseness, no manual assertions.
+
+```ts
+// lib/api/products.ts - one resource definition, used everywhere
+import { createResource, type OffsetPaginationParams } from "client-api-kit";
+
+export const productResource = createResource<Product, OffsetPaginationParams>(apiClient, {
+  baseURL: "/api/v1/products",
+  mode: "query",
+});
+```
+
+```ts
+// app/products/[id]/page.tsx - a server component
+export default async function ProductPage({ params }: { params: { id: string } }) {
+  const res = await productResource.getById(params.id);
+
+  if (res.isError) {
+    // res.error is fully typed here: ApiClientError
+    if (res.error.code === "NOT_FOUND") return <NotFound />;
+    return <ErrorMessage message={res.error.message} />;
+  }
+
+  return <ProductDetail product={res.data} />; // res.data is Product
+}
+```
+
+```ts
+// app/products/[id]/actions.ts - a server action
+export async function renameProduct(id: string, name: string) {
+  const res = await productResource.update(id, { name });
+  return res.isError ? { ok: false, message: res.error.message } : { ok: true, product: res.data };
+}
+```
+
+Because the shape matches the hooks' result field-for-field, a component can
+swap `useProductHooks.useGetById(id)` for `await productResource.getById(id)`
+(and back) without touching any field access. `isPending`/`isLoading`/
+`isFetching` are always `false` - after `await` the call is settled, so the
+type model has no in-flight state; the fields exist purely for parity.
 
 Note: the TanStack Query hooks layer (`createResourceHooks`) needs rejected
 promises to set `isError`, so hook-wrapped resources must stay in the
@@ -414,8 +468,8 @@ const users = createResource<User>(apiClient, {
 A validator that throws (zod's `parse` does) is normalized into an
 `ApiClientError` with `kind: "unknown"` and the original error as its cause
 - it rejects in `"throw"` mode or lands in the `error` branch in
-`"result"` mode, exactly like any other failure. `custom()` takes its own
-per-call `parse` (its payload type `R` varies per call).
+`"result"`/`"query"` mode, exactly like any other failure. `custom()` takes
+its own per-call `parse` (its payload type `R` varies per call).
 
 ## Pagination
 
@@ -504,7 +558,7 @@ network/5xx errors up to twice, mutations never auto-retry.
 
 | Module | Contents |
 |---|---|
-| `client-api-kit` | `createApiClient`, `createResource`, `createQueryKeys`, `ApiClientError`, `ResourceResult`/`SafeResourceClient`/`ResourceParsers` types, all pagination/response types re-exported from `client-api-types` |
+| `client-api-kit` | `createApiClient`, `createResource`, `createQueryKeys`, `ApiClientError`, `QueryResult`/`QueryResourceClient`/`ResourceResult`/`SafeResourceClient`/`ResourceMode`/`ResourceParsers` types, all pagination/response types re-exported from `client-api-types` |
 | `client-api-kit/react` | `createResourceHooks`, `createQueryClient`, `ApiQueryProvider` |
 | `client-api-kit/server` | `createResourcePrefetcher`, `createQueryClient` |
 
@@ -513,7 +567,7 @@ network/5xx errors up to twice, mutations never auto-retry.
 ```bash
 npm install
 npm run typecheck
-npm test        # 58 tests: client, resources (offset + cursor), typed results + validation, provider, hooks layer, prefetch + hydration against a mock HTTP server
+npm test        # 67 tests: client, resources (offset + cursor), modes (result + query) + validation, provider, hooks layer, prefetch + hydration against a mock HTTP server
 npm run build   # tsup -> dist/ (ESM + CJS + .d.ts), "use client" applied to the react entry only
 ```
 
