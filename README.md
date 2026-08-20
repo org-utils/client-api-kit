@@ -2,8 +2,7 @@
 
 A generic, type-safe API client built on **axios**, paired with
 [`client-api-types`](https://www.npmjs.com/package/client-api-types)'s
-response envelope. Ships two
-things:
+response envelope. Ships three things:
 
 - **Core** (`client-api-kit`) - a framework-agnostic HTTP client and
   generic CRUD "resources": plain async functions safe to call from a
@@ -11,12 +10,15 @@ things:
   Node/Edge script.
 - **React** (`client-api-kit/react`) - a **TanStack Query v5** hooks layer
   built on top of the same resources, for **client components**.
+- **Server prefetch** (`client-api-kit/server`) - TanStack Query prefetch
+  helpers sharing the hooks' query keys, for warming the cache server-side
+  (SSR hydration) or client-side before a navigation.
 
-One resource definition, two ways to consume it.
+One resource definition, three ways to consume it.
 
 ```bash
 npm install client-api-kit axios
-npm install client-api-kit/react @tanstack/react-query react   # only if you use the hooks layer
+npm install client-api-kit @tanstack/react-query react          # only if you use the hooks layer
 npm install -D @tanstack/react-query-devtools                 # optional, for the devtools overlay
 ```
 
@@ -65,9 +67,9 @@ export interface User { id: string; name: string; email: string; }
 export interface CreateUserInput { name: string; email: string; }
 export type UpdateUserInput = Partial<CreateUserInput>;
 
-export const usersResource = createResource<User, CreateUserInput, UpdateUserInput, OffsetPaginationParams>(
+export const usersResource = createResource<User, OffsetPaginationParams, CreateUserInput, UpdateUserInput>(
   apiClient,
-  { basePath: "/users" },
+  { baseURL: "/users" },
 );
 ```
 
@@ -181,6 +183,101 @@ export function UserList() {
 }
 ```
 
+## Prefetching (server + client)
+
+The hooks layer fetches on the client. To skip that first network round trip,
+warm the query cache *before* the client mounts using the same query keys the
+hooks use, via `client-api-kit/server` (a non-`"use client"` entry, safe to
+import from server components and server actions).
+
+```bash
+npm install client-api-kit @tanstack/react-query
+```
+
+```ts
+// lib/api/users.ts
+import { createResource, type OffsetPaginationParams } from "client-api-kit";
+import { createResourcePrefetcher } from "client-api-kit/server";
+
+export const usersResource = createResource<User, OffsetPaginationParams, CreateUserInput, UpdateUserInput>(apiClient, {
+  baseURL: "/users",
+});
+// Same resource + name as createResourceHooks → keys line up, hydration works.
+export const userPrefetcher = createResourcePrefetcher(usersResource, "users");
+```
+
+### In a server component (SSR hydration)
+
+Create a fresh `QueryClient` per request, prefetch, `dehydrate` it, and pass
+the state to a `HydrationBoundary` around the client component:
+
+```tsx
+// app/users/page.tsx (Server Component)
+import { dehydrate, HydrationBoundary } from "@tanstack/react-query";
+import { createQueryClient } from "client-api-kit/server";
+import { userPrefetcher } from "@/lib/api/users";
+
+export default async function UsersPage({ searchParams }: { searchParams: { page?: string } }) {
+  const queryClient = createQueryClient();
+  await userPrefetcher.prefetchList(queryClient, {
+    page: Number(searchParams.page ?? 1),
+    limit: 20,
+  });
+
+  return (
+    <HydrationBoundary state={dehydrate(queryClient)}>
+      <UserList />
+    </HydrationBoundary>
+  );
+}
+```
+
+`UserList`'s `useList({ page, limit: 20 })` then renders straight from the
+hydrated cache - no loading flash, no duplicate request. A `staleTime` of 60s
+is applied during prefetch by default so the data isn't instantly refetched on
+mount; override it per call via the options argument. Failed prefetches never
+throw (matching TanStack Query) - the error lands in the cache and is readable
+via `queryClient.getQueryState(key).error`.
+
+Available prefetchers, mirroring the hooks one-to-one:
+
+| Prefetcher | Warmest query | Key |
+|---|---|---|
+| `prefetchList(queryClient, params?, options?)` | `useList` | `queryKeys.list(params)` |
+| `prefetchInfiniteList(queryClient, params?, options?)` | `useInfiniteList` | `queryKeys.infinite(params)` (first page by default) |
+| `prefetchGetById(queryClient, id, options?)` | `useGetById` | `queryKeys.detail(id)` |
+| `prefetchCustom(queryClient, method?, path?, callOptions?, options?)` | custom endpoints | `queryKeys.custom(method, path, params)` |
+
+Each returns the `queryKeys` factory too, so you can build keys manually for
+custom cache operations.
+
+### On the client (prefetch before navigation)
+
+The same functions work in client event handlers with the shared `QueryClient`:
+
+```tsx
+"use client";
+import { useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
+import { userPrefetcher } from "@/lib/api/users";
+
+export function PaginatedLink({ page }: { page: number }) {
+  const queryClient = useQueryClient();
+  const router = useRouter();
+
+  return (
+    <button
+      onClick={async () => {
+        await userPrefetcher.prefetchList(queryClient, { page, limit: 20 });
+        router.push(`/users?page=${page}`);
+      }}
+    >
+      Go to page {page}
+    </button>
+  );
+}
+```
+
 ## Core client
 
 ```ts
@@ -281,9 +378,9 @@ Define the resource's `ListParams` as cursor-shaped (`{ cursor?: string; limit: 
 optionally with your own filters), then use `useInfiniteList`:
 
 ```ts
-export const postsFeed = createResource<Post, CreatePostInput, UpdatePostInput, { cursor?: string; limit: number }>(
+export const postsFeed = createResource<Post, { cursor?: string; limit: number }, CreatePostInput, UpdatePostInput>(
   apiClient,
-  { basePath: "/feed" },
+  { baseURL: "/feed" },
 );
 export const feedHooks = createResourceHooks(postsFeed, "feed");
 ```
@@ -336,6 +433,10 @@ const queryClient = createQueryClient({
 });
 ```
 
+`createQueryClient` is also exported from `client-api-kit/server` (no
+`"use client"`), for building the per-request server QueryClient used in the
+prefetch pattern above.
+
 Default retry policy: never retries 4xx (won't succeed on retry), retries
 network/5xx errors up to twice, mutations never auto-retry.
 
@@ -345,13 +446,14 @@ network/5xx errors up to twice, mutations never auto-retry.
 |---|---|
 | `client-api-kit` | `createApiClient`, `createResource`, `createQueryKeys`, `ApiClientError`, all pagination/response types re-exported from `client-api-types` |
 | `client-api-kit/react` | `createResourceHooks`, `createQueryClient`, `ApiQueryProvider` |
+| `client-api-kit/server` | `createResourcePrefetcher`, `createQueryClient` |
 
 ## Development
 
 ```bash
 npm install
 npm run typecheck
-npm test        # 38 tests: client, resources (offset + cursor), provider, full hooks layer against a mock HTTP server
+npm test        # 46 tests: client, resources (offset + cursor), provider, hooks layer, prefetch + hydration against a mock HTTP server
 npm run build   # tsup -> dist/ (ESM + CJS + .d.ts), "use client" applied to the react entry only
 ```
 

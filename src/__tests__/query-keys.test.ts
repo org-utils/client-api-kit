@@ -10,6 +10,14 @@ describe("createQueryKeys", () => {
     expect(keys.list({ page: 1, limit: 10 })).toEqual(["posts", "list", { page: 1, limit: 10 }]);
     expect(keys.details()).toEqual(["posts", "detail"]);
     expect(keys.detail("42")).toEqual(["posts", "detail", "42"]);
+    expect(keys.custom("GET", "/export", { format: "json" })).toEqual([
+      "posts",
+      "custom",
+      "GET",
+      "/export",
+      { format: "json" },
+    ]);
+    expect(keys.custom()).toEqual(["posts", "custom", undefined, undefined, undefined]);
   });
 
   it("produces distinct keys for distinct params (so caching doesn't collide)", () => {

@@ -2,6 +2,7 @@ import { describe, expect, it, beforeEach } from "vitest";
 import { renderHook, waitFor, act } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
+import type { OffsetPaginationParams } from "client-api-types";
 import { createApiClient } from "../core/create-client.js";
 import { createResource } from "../resource/create-resource.js";
 import { createResourceHooks } from "../react/create-resource-hooks.js";
@@ -16,7 +17,9 @@ type UpdatePostInput = Partial<CreatePostInput>;
 
 function setup() {
   const client = createApiClient({ baseURL: BASE_URL });
-  const resource = createResource<Post, CreatePostInput, UpdatePostInput>(client, { baseURL: "/posts" });
+  const resource = createResource<Post, OffsetPaginationParams, CreatePostInput, UpdatePostInput>(client, {
+    baseURL: "/posts",
+  });
   const hooks = createResourceHooks(resource, "posts");
   const queryClient = createQueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
 
@@ -160,7 +163,7 @@ describe("createResourceHooks - useInfiniteList", () => {
 
   it("fetches successive pages via nextCursor", async () => {
     const client = createApiClient({ baseURL: BASE_URL });
-    const feedResource = createResource<Post, CreatePostInput, UpdatePostInput, { cursor?: string; limit: number }>(
+    const feedResource = createResource<Post, { cursor?: string; limit: number }, CreatePostInput, UpdatePostInput>(
       client,
       { baseURL: "/feed" },
     );

@@ -36,4 +36,19 @@ export default defineConfig([
       return { js: format === "cjs" ? ".cjs" : ".js" };
     },
   },
+  // Server prefetch helpers. Deliberately NOT marked "use client" so server
+  // components/server actions can import them for the SSR hydration pattern.
+  {
+    entry: { server: "src/server/index.ts" },
+    format: ["esm", "cjs"],
+    dts: true,
+    sourcemap: false,
+    clean: false,
+    splitting: false,
+    treeshake: true,
+    target: "es2022",
+    outExtension({ format }) {
+      return { js: format === "cjs" ? ".cjs" : ".js" };
+    },
+  },
 ]);

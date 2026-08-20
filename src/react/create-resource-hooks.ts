@@ -22,15 +22,15 @@ import { isCursorPagination } from "../utils/index.js";
  * invalidation for mutations, `keepPreviousData` for lists).
  *
  * @typeParam T - The record type this resource manages.
+ * @typeParam ListParams - List params shape (offset or cursor pagination).
  * @typeParam CreateInput - Payload type for the create mutation.
  * @typeParam UpdateInput - Payload type for the update mutation.
- * @typeParam ListParams - List params shape (offset or cursor pagination).
  */
 export interface ResourceHooks<
   T,
+  ListParams extends object,
   CreateInput,
   UpdateInput,
-  ListParams extends object,
 > {
   /** Query-key builders for manual cache operations (`detail(id)`, `lists()`, ...). */
   queryKeys: QueryKeyFactory<ListParams>;
@@ -117,16 +117,16 @@ export interface ResourceHooks<
  * views for the same resource.
  *
  * @typeParam T - The record type this resource manages.
+ * @typeParam ListParams - List params shape. Defaults to `Record<string, unknown>`.
  * @typeParam CreateInput - Payload type for `create`. Defaults to `Partial<T>`.
  * @typeParam UpdateInput - Payload type for `update`. Defaults to `Partial<T>`.
- * @typeParam ListParams - List params shape. Defaults to `Record<string, unknown>`.
  * @param resource - The resource created with `createResource(...)`.
  * @param resourceName - Stable, unique name used for the query keys, e.g. `"users"`.
  * @returns The {@link ResourceHooks} object with `useList`, `useInfiniteList`,
  *   `useGetById`, `useCreate`, `useUpdate`, `useDelete`, and `queryKeys`.
  *
  * @example
- * const usersResource = createResource<User, CreateUserInput, UpdateUserInput>(client, { basePath: "/users" });
+ * const usersResource = createResource<User, OffsetPaginationParams, CreateUserInput, UpdateUserInput>(client, { baseURL: "/users" });
  * export const userHooks = createResourceHooks(usersResource, "users");
  *
  * function UserList() {
@@ -136,13 +136,13 @@ export interface ResourceHooks<
  */
 export function createResourceHooks<
   T,
+  ListParams extends object = Record<string, unknown>,
   CreateInput = Partial<T>,
   UpdateInput = Partial<T>,
-  ListParams extends object = Record<string, unknown>,
 >(
   resource: ResourceClient<T, CreateInput, UpdateInput, ListParams>,
   resourceName: string,
-): ResourceHooks<T, CreateInput, UpdateInput, ListParams> {
+): ResourceHooks<T, ListParams, CreateInput, UpdateInput> {
   const queryKeys = createQueryKeys<ListParams>(resourceName);
 
   /** {@link ResourceHooks.useList} */
